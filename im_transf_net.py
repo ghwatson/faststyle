@@ -1,14 +1,15 @@
 """
 Functions used for the creation of the transformation network.
 
-Batch normalization functions are provided but not utilized.
+File author: Grant Watson
+Date: Jan 2017
 """
 
 import numpy as np
 import tensorflow as tf
 
 
-def create_net(image):
+def create_net(image_shape):
     """Creates the transformation network, given dimensions acquired from an
     input image. Does this according to J.C. Johnson's specifications
     after utilizing instance normalization (i.e. halving dimensions given
@@ -17,41 +18,42 @@ def create_net(image):
     :param image
         Input image in numpy array form with NxHxWxC dimensions.
     """
-    shape = image.shape
+    shape = image_shape
 
-    X = tf.placeholder(tf.float32, shape=shape, name="input")
+    with tf.Graph().as_default() as g:
+        X = tf.placeholder(tf.float32, shape=shape, name="input")
 
-    # Padding
-    h = reflect_pad(X, 40)
+        # Padding
+        h = reflect_pad(X, 40)
 
-    # Initial convolutional layers
-    with tf.variable_scope('initconv_0'):
-        h = relu(inst_norm(conv2d(h, 3, 16, 9, [1, 1, 1, 1])))
-    with tf.variable_scope('initconv_1'):
-        h = relu(inst_norm(conv2d(h, 16, 32, 3, [1, 2, 2, 1])))
-    with tf.variable_scope('initconv_2'):
-        h = relu(inst_norm(conv2d(h, 32, 64, 3, [1, 2, 2, 1])))
+        # Initial convolutional layers
+        with tf.variable_scope('initconv_0'):
+            h = relu(inst_norm(conv2d(h, 3, 16, 9, [1, 1, 1, 1])))
+        with tf.variable_scope('initconv_1'):
+            h = relu(inst_norm(conv2d(h, 16, 32, 3, [1, 2, 2, 1])))
+        with tf.variable_scope('initconv_2'):
+            h = relu(inst_norm(conv2d(h, 32, 64, 3, [1, 2, 2, 1])))
 
-    # Residual layers
-    with tf.variable_scope('resblock_0'):
-        h = res_layer(h, 64, 3, [1, 1, 1, 1])
-    with tf.variable_scope('resblock_1'):
-        h = res_layer(h, 64, 3, [1, 1, 1, 1])
-    with tf.variable_scope('resblock_2'):
-        h = res_layer(h, 64, 3, [1, 1, 1, 1])
+        # Residual layers
+        with tf.variable_scope('resblock_0'):
+            h = res_layer(h, 64, 3, [1, 1, 1, 1])
+        with tf.variable_scope('resblock_1'):
+            h = res_layer(h, 64, 3, [1, 1, 1, 1])
+        with tf.variable_scope('resblock_2'):
+            h = res_layer(h, 64, 3, [1, 1, 1, 1])
 
-    # Deconvolutional layers
-    with tf.variable_scope('deconv_0'):
-        h = relu(inst_norm(deconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
-    with tf.variable_scope('deconv_1'):
-        h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
-    with tf.variable_scope('deconv_2'):
-        h = relu(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
+        # Deconvolutional layers
+        with tf.variable_scope('deconv_0'):
+            h = relu(inst_norm(deconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
+        with tf.variable_scope('deconv_1'):
+            h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
+        with tf.variable_scope('deconv_2'):
+            h = relu(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
 
-    # Output layers
-    out = h
+        # Create a redundant layer with name 'output'
+        h = tf.identity(h, name='output')
 
-    return out
+    return g
 
 
 def reflect_pad(X, padsize):
@@ -99,7 +101,7 @@ def conv2d(X, n_ch_in, n_ch_out, kernel_size, strides, name=None,
 
 
 def deconv2d(X, n_ch_in, n_ch_out, kernel_size, strides):
-    """Creates a transposed convolutional layer.
+    """Creates a transposed convolutional (deconvolution) layer.
 
     :param X
         Input tensor
@@ -210,14 +212,11 @@ if __name__ == "__main__":
     img2 = np.zeros((256, 256, 3))
     img2[0:128, :, 0] = 0.5
     img2 = img2[np.newaxis, :]
-    print img.shape
     img = np.append(img, img2, axis=0)
-    print img.shape
 
-    net = create_net(img)
-    g = tf.get_default_graph()
+    g = create_net(img.shape)
     # Attempt to initialize the net and feedforward the bogus image.
-    with tf.Session() as sess:
+    with tf.Session(graph=g) as sess:
         sess.run(tf.initialize_all_variables())
         X = g.get_tensor_by_name('input:0')
         scale = g.get_tensor_by_name('initconv_0/INscale:0')
