@@ -1,0 +1,3 @@
+vgg16.tfmodel
+synset.txt
+*.pyc
