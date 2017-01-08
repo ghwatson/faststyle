@@ -20,40 +20,44 @@ def create_net(image_shape):
     """
     shape = image_shape
 
-    with tf.Graph().as_default() as g:
-        X = tf.placeholder(tf.float32, shape=shape, name="input")
+    # Input
+    X = tf.placeholder(tf.float32, shape=shape, name="input")
 
-        # Padding
-        h = reflect_pad(X, 40)
+    # Padding
+    h = reflect_pad(X, 40)
 
-        # Initial convolutional layers
-        with tf.variable_scope('initconv_0'):
-            h = relu(inst_norm(conv2d(h, 3, 16, 9, [1, 1, 1, 1])))
-        with tf.variable_scope('initconv_1'):
-            h = relu(inst_norm(conv2d(h, 16, 32, 3, [1, 2, 2, 1])))
-        with tf.variable_scope('initconv_2'):
-            h = relu(inst_norm(conv2d(h, 32, 64, 3, [1, 2, 2, 1])))
+    # Initial convolutional layers
+    with tf.variable_scope('initconv_0'):
+        h = relu(inst_norm(conv2d(h, 3, 16, 9, [1, 1, 1, 1])))
+    with tf.variable_scope('initconv_1'):
+        h = relu(inst_norm(conv2d(h, 16, 32, 3, [1, 2, 2, 1])))
+    with tf.variable_scope('initconv_2'):
+        h = relu(inst_norm(conv2d(h, 32, 64, 3, [1, 2, 2, 1])))
 
-        # Residual layers
-        with tf.variable_scope('resblock_0'):
-            h = res_layer(h, 64, 3, [1, 1, 1, 1])
-        with tf.variable_scope('resblock_1'):
-            h = res_layer(h, 64, 3, [1, 1, 1, 1])
-        with tf.variable_scope('resblock_2'):
-            h = res_layer(h, 64, 3, [1, 1, 1, 1])
+    # Residual layers
+    with tf.variable_scope('resblock_0'):
+        h = res_layer(h, 64, 3, [1, 1, 1, 1])
+    with tf.variable_scope('resblock_1'):
+        h = res_layer(h, 64, 3, [1, 1, 1, 1])
+    with tf.variable_scope('resblock_2'):
+        h = res_layer(h, 64, 3, [1, 1, 1, 1])
+    with tf.variable_scope('resblock_3'):
+        h = res_layer(h, 64, 3, [1, 1, 1, 1])
+    with tf.variable_scope('resblock_4'):
+        h = res_layer(h, 64, 3, [1, 1, 1, 1])
 
-        # Deconvolutional layers
-        with tf.variable_scope('deconv_0'):
-            h = relu(inst_norm(deconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
-        with tf.variable_scope('deconv_1'):
-            h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
-        with tf.variable_scope('deconv_2'):
-            h = relu(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
+    # Deconvolutional layers (tanh on last to get 0,255 range)
+    with tf.variable_scope('deconv_0'):
+        h = relu(inst_norm(deconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
+    with tf.variable_scope('deconv_1'):
+        h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
+    with tf.variable_scope('deconv_2'):
+        h =scaled_tanh(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
 
-        # Create a redundant layer with name 'output'
-        h = tf.identity(h, name='output')
+    # Create a redundant layer with name 'output'
+    h = tf.identity(h, name='output')
 
-    return g
+    return h
 
 
 def reflect_pad(X, padsize):
@@ -144,7 +148,22 @@ def relu(X):
     return tf.nn.relu(X, name='relu')
 
 
-def inst_norm(inputs, epsilon=1e-3):
+def scaled_tanh(X):
+    """Performs tanh activation to ensure range of 0,255 on positive output.
+
+    :param X
+        Input tensor
+    """
+    scale = tf.constant(255.0)
+    shift = tf.constant(255.0)
+    half = tf.constant(2.0)
+    out = tf.mul(tf.tanh(X), scale)  # range of [-255, 255]
+    out = tf.add(out, shift)  # range of [0, 2*255]
+    out = tf.div(out, half)  # range of [0, 255]
+    return out
+
+
+def inst_norm(inputs, epsilon=1e-3, suffix=''):
     """
     Assuming TxHxWxC dimensions on the tensor, will normalize over
     the H,W dimensions. Use this before the activation layer.
@@ -159,8 +178,10 @@ def inst_norm(inputs, epsilon=1e-3):
     """
     # Create scale + shift. Exclude batch dimension.
     stat_shape = inputs.get_shape().as_list()
-    scale = tf.Variable(tf.ones(stat_shape[1::]), name='INscale')
-    shift = tf.Variable(tf.zeros(stat_shape[1::]), name='INshift')
+    scale = tf.get_variable('INscale'+suffix,
+                            initializer=tf.ones(stat_shape[1::]))
+    shift = tf.get_variable('INshift'+suffix,
+                            initializer=tf.zeros(stat_shape[1::]))
 
     inst_means, inst_vars = tf.nn.moments(inputs, axes=[1, 2],
                                           keep_dims=True)
@@ -187,9 +208,9 @@ def res_layer(X, n_ch, kernel_size, strides):
         Stride information
     """
     h = conv2d(X, n_ch, n_ch, kernel_size, strides, name='W1', padding='VALID')
-    h = relu(inst_norm(h))
+    h = relu(inst_norm(h, suffix='1'))
     h = conv2d(h, n_ch, n_ch, kernel_size, strides, name='W2', padding='VALID')
-    h = inst_norm(h)
+    h = inst_norm(h, suffix='2')
 
     # Crop for skip connection
     in_shape = X.get_shape().as_list()
@@ -214,11 +235,12 @@ if __name__ == "__main__":
     img2 = img2[np.newaxis, :]
     img = np.append(img, img2, axis=0)
 
-    g = create_net(img.shape)
-    # Attempt to initialize the net and feedforward the bogus image.
-    with tf.Session(graph=g) as sess:
+    # Initialize net and feed forward.
+    h = create_net(img.shape)
+    g = tf.get_default_graph()
+    with tf.Session() as sess:
         sess.run(tf.initialize_all_variables())
         X = g.get_tensor_by_name('input:0')
         scale = g.get_tensor_by_name('initconv_0/INscale:0')
-        outt = g.get_tensor_by_name('deconv_2/relu:0')
-        output = sess.run(outt, feed_dict={X: img})
+        out = sess.run(h, feed_dict={X: img})
+    print out

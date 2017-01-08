@@ -1,242 +1,279 @@
 """
-Borrowing code to import vgg16.
+Davi Frossard's Tensorflow implementation of VGG. I made a minor modification
+to remove the image size dependent fc layers at the end since we want to be
+able to easily alter image size (also they are of no use since we're just
+borrowing VGG's representation and not its output).
 
------Original Header:
+-----Original header
 
-Creative Applications of Deep Learning w/ Tensorflow.
-Kadenze, Inc.
-Copyright Parag K. Mital, June 2016.
+########################################################################################
+# Davi Frossard, 2016                                                                  #
+# VGG16 implementation in TensorFlow                                                   #
+# Details:                                                                             #
+# http://www.cs.toronto.edu/~frossard/post/vgg16/                                      #
+#                                                                                      #
+# Model from https://gist.github.com/ksimonyan/211839e770f7b538e2d8#file-readme-md     #
+# Weights from Caffe converted using https://github.com/ethereon/caffe-tensorflow      #
+########################################################################################
 """
+
 import tensorflow as tf
-import json
 import numpy as np
-import matplotlib.pyplot as plt
-from skimage.transform import resize as imresize
-from .utils import download
-
-# TODO: Trim out the fat and review how we load in the .tfmodel for usage.
+from scipy.misc import imread, imresize
+from imagenet_classes import class_names
 
 
-def get_vgg_face_model():
-    download('https://s3.amazonaws.com/cadl/models/vgg_face.tfmodel')
-    with open("vgg_face.tfmodel", mode='rb') as f:
-        graph_def = tf.GraphDef()
-        try:
-            graph_def.ParseFromString(f.read())
-        except:
-            print('try adding PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python ' +
-                  'to environment.  e.g.:\n' +
-                  'PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python ipython\n' +
-                  'See here for info: ' +
-                  'https://github.com/tensorflow/tensorflow/issues/582')
-
-    download('https://s3.amazonaws.com/cadl/models/vgg_face.json')
-    labels = json.load(open('vgg_face.json'))
-
-    return {
-        'graph_def': graph_def,
-        'labels': labels,
-        'preprocess': preprocess,
-        'deprocess': deprocess
-    }
+class vgg16:
+    def __init__(self, imgs, weights=None, sess=None):
+        self.imgs = imgs
+        self.convlayers()
+        #self.fc_layers()
+        #self.probs = tf.nn.softmax(self.fc3l)
+        if weights is not None and sess is not None:
+            self.load_weights(weights, sess)
 
 
-def get_vgg_model():
-    download('https://s3.amazonaws.com/cadl/models/vgg16.tfmodel')
-    with open("vgg16.tfmodel", mode='rb') as f:
-        graph_def = tf.GraphDef()
-        try:
-            graph_def.ParseFromString(f.read())
-        except:
-            print('try adding PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python ' +
-                  'to environment.  e.g.:\n' +
-                  'PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python ipython\n' +
-                  'See here for info: ' +
-                  'https://github.com/tensorflow/tensorflow/issues/582')
+    def convlayers(self):
+        self.parameters = []
 
-    download('https://s3.amazonaws.com/cadl/models/synset.txt')
-    with open('synset.txt') as f:
-        labels = [(idx, l.strip()) for idx, l in enumerate(f.readlines())]
+        # zero-mean input
+        with tf.name_scope('preprocess') as scope:
+            mean = tf.constant([123.68, 116.779, 103.939], dtype=tf.float32, shape=[1, 1, 1, 3], name='img_mean')
+            images = self.imgs-mean
 
-    return {
-        'graph_def': graph_def,
-        'labels': labels,
-        'preprocess': preprocess,
-        'deprocess': deprocess
-    }
+        # conv1_1
+        with tf.name_scope('conv1_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 3, 64], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(images, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv1_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
+        # conv1_2
+        with tf.name_scope('conv1_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 64], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv1_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[64], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv1_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-def preprocess(img, crop=True, resize=True, dsize=(224, 224)):
-    if img.dtype == np.uint8:
-        img = img / 255.0
+        # pool1
+        self.pool1 = tf.nn.max_pool(self.conv1_2,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool1')
 
-    if crop:
-        short_edge = min(img.shape[:2])
-        yy = int((img.shape[0] - short_edge) / 2)
-        xx = int((img.shape[1] - short_edge) / 2)
-        crop_img = img[yy: yy + short_edge, xx: xx + short_edge]
-    else:
-        crop_img = img
+        # conv2_1
+        with tf.name_scope('conv2_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 64, 128], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv2_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-    if resize:
-        norm_img = imresize(crop_img, dsize, preserve_range=True)
-    else:
-        norm_img = crop_img
+        # conv2_2
+        with tf.name_scope('conv2_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 128], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv2_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[128], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv2_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-    return (norm_img).astype(np.float32)
+        # pool2
+        self.pool2 = tf.nn.max_pool(self.conv2_2,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool2')
 
+        # conv3_1
+        with tf.name_scope('conv3_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 128, 256], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv3_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-def deprocess(img):
-    return np.clip(img * 255, 0, 255).astype(np.uint8)
-    # return ((img / np.max(np.abs(img))) * 127.5 +
-    #         127.5).astype(np.uint8)
+        # conv3_2
+        with tf.name_scope('conv3_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv3_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv3_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
+        # conv3_3
+        with tf.name_scope('conv3_3') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 256], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv3_2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[256], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv3_3 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-def test_vgg():
-    """Loads the VGG network and applies it to a test image.
-    """
-    with tf.Session() as sess:
-        net = get_vgg_model()
-        tf.import_graph_def(net['graph_def'], name='vgg')
-        g = tf.get_default_graph()
-        names = [op.name for op in g.get_operations()]
-        input_name = names[0] + ':0'
-        x = g.get_tensor_by_name(input_name)
-        softmax = g.get_tensor_by_name(names[-2] + ':0')
+        # pool3
+        self.pool3 = tf.nn.max_pool(self.conv3_3,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool3')
 
-        og = plt.imread('bosch.png')
-        img = preprocess(og)[np.newaxis, ...]
-        res = np.squeeze(softmax.eval(feed_dict={
-            x: img,
-            'vgg/dropout_1/random_uniform:0': [[1.0]],
-            'vgg/dropout/random_uniform:0': [[1.0]]}))
-        print([(res[idx], net['labels'][idx])
-               for idx in res.argsort()[-5:][::-1]])
+        # conv4_1
+        with tf.name_scope('conv4_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 256, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool3, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv4_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-        """Let's visualize the network's gradient activation
-        when backpropagated to the original input image.  This
-        is effectively telling us which pixels contribute to the
-        predicted class or given neuron"""
-        features = [name for name in names if 'BiasAdd' in name.split()[-1]]
-        from math import sqrt, ceil
-        n_plots = ceil(sqrt(len(features) + 1))
-        fig, axs = plt.subplots(n_plots, n_plots)
-        plot_i = 0
-        axs[0][0].imshow(img[0])
-        for feature_i, featurename in enumerate(features):
-            plot_i += 1
-            feature = g.get_tensor_by_name(featurename + ':0')
-            neuron = tf.reduce_max(feature, 1)
-            saliency = tf.gradients(tf.reduce_sum(neuron), x)
-            neuron_idx = tf.arg_max(feature, 1)
-            this_res = sess.run([saliency[0], neuron_idx], feed_dict={
-                x: img,
-                'vgg/dropout_1/random_uniform:0': [[1.0]],
-                'vgg/dropout/random_uniform:0': [[1.0]]})
+        # conv4_2
+        with tf.name_scope('conv4_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv4_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv4_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-            grad = this_res[0][0] / np.max(np.abs(this_res[0]))
-            ax = axs[plot_i // n_plots][plot_i % n_plots]
-            ax.imshow((grad * 127.5 + 127.5).astype(np.uint8))
-            ax.set_title(featurename)
+        # conv4_3
+        with tf.name_scope('conv4_3') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv4_2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv4_3 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-        """Deep Dreaming takes the backpropagated gradient activations
-        and simply adds it to the image, running the same process again
-        and again in a loop.  There are many tricks one can add to this
-        idea, such as infinitely zooming into the image by cropping and
-        scaling, adding jitter by randomly moving the image around, or
-        adding constraints on the total activations."""
-        og = plt.imread('street.png')
-        crop = 2
-        img = preprocess(og)[np.newaxis, ...]
-        layer = g.get_tensor_by_name(features[3] + ':0')
-        n_els = layer.get_shape().as_list()[1]
-        neuron_i = np.random.randint(1000)
-        layer_vec = np.zeros((1, n_els))
-        layer_vec[0, neuron_i] = 1
-        neuron = tf.reduce_max(layer, 1)
-        saliency = tf.gradients(tf.reduce_sum(neuron), x)
-        for it_i in range(3):
-            print(it_i)
-            this_res = sess.run(saliency[0], feed_dict={
-                x: img,
-                layer: layer_vec,
-                'vgg/dropout_1/random_uniform:0': [[1.0]],
-                'vgg/dropout/random_uniform:0': [[1.0]]})
-            grad = this_res[0] / np.mean(np.abs(grad))
-            img = img[:, crop:-crop - 1, crop:-crop - 1, :]
-            img = imresize(img[0], (224, 224))[np.newaxis]
-            img += grad
-        plt.imshow(deprocess(img[0]))
+        # pool4
+        self.pool4 = tf.nn.max_pool(self.conv4_3,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool4')
 
+        # conv5_1
+        with tf.name_scope('conv5_1') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.pool4, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv5_1 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-def test_vgg_face():
-    """Loads the VGG network and applies it to a test image.
-    """
-    with tf.Session() as sess:
-        net = get_vgg_face_model()
-        x = tf.placeholder(tf.float32, [1, 224, 224, 3], name='x')
-        tf.import_graph_def(net['graph_def'], name='vgg',
-                            input_map={'Placeholder:0': x})
-        g = tf.get_default_graph()
-        names = [op.name for op in g.get_operations()]
+        # conv5_2
+        with tf.name_scope('conv5_2') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv5_1, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv5_2 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-        og = plt.imread('bricks.png')[..., :3]
-        img = preprocess(og)[np.newaxis, ...]
-        plt.imshow(img[0])
-        plt.show()
+        # conv5_3
+        with tf.name_scope('conv5_3') as scope:
+            kernel = tf.Variable(tf.truncated_normal([3, 3, 512, 512], dtype=tf.float32,
+                                                     stddev=1e-1), name='weights')
+            conv = tf.nn.conv2d(self.conv5_2, kernel, [1, 1, 1, 1], padding='SAME')
+            biases = tf.Variable(tf.constant(0.0, shape=[512], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            out = tf.nn.bias_add(conv, biases)
+            self.conv5_3 = tf.nn.relu(out, name=scope)
+            self.parameters += [kernel, biases]
 
-        """Let's visualize the network's gradient activation
-        when backpropagated to the original input image.  This
-        is effectively telling us which pixels contribute to the
-        predicted class or given neuron"""
-        features = [name for name in names if 'BiasAdd' in name.split()[-1]]
-        from math import sqrt, ceil
-        n_plots = ceil(sqrt(len(features) + 1))
-        fig, axs = plt.subplots(n_plots, n_plots)
-        plot_i = 0
-        axs[0][0].imshow(img[0])
-        for feature_i, featurename in enumerate(features):
-            plot_i += 1
-            feature = g.get_tensor_by_name(featurename + ':0')
-            neuron = tf.reduce_max(feature, 1)
-            saliency = tf.gradients(tf.reduce_sum(neuron), x)
-            neuron_idx = tf.arg_max(feature, 1)
-            this_res = sess.run([saliency[0], neuron_idx], feed_dict={x: img})
+        # pool5
+        self.pool5 = tf.nn.max_pool(self.conv5_3,
+                               ksize=[1, 2, 2, 1],
+                               strides=[1, 2, 2, 1],
+                               padding='SAME',
+                               name='pool4')
 
-            grad = this_res[0][0] / np.max(np.abs(this_res[0]))
-            ax = axs[plot_i // n_plots][plot_i % n_plots]
-            ax.imshow((grad * 127.5 + 127.5).astype(np.uint8))
-            ax.set_title(featurename)
-            plt.waitforbuttonpress()
+    def fc_layers(self):
+        # fc1
+        with tf.name_scope('fc1') as scope:
+            shape = int(np.prod(self.pool5.get_shape()[1:]))
+            fc1w = tf.Variable(tf.truncated_normal([shape, 4096],
+                                                         dtype=tf.float32,
+                                                         stddev=1e-1), name='weights')
+            fc1b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            pool5_flat = tf.reshape(self.pool5, [-1, shape])
+            fc1l = tf.nn.bias_add(tf.matmul(pool5_flat, fc1w), fc1b)
+            self.fc1 = tf.nn.relu(fc1l)
+            self.parameters += [fc1w, fc1b]
 
-        """Deep Dreaming takes the backpropagated gradient activations
-        and simply adds it to the image, running the same process again
-        and again in a loop.  There are many tricks one can add to this
-        idea, such as infinitely zooming into the image by cropping and
-        scaling, adding jitter by randomly moving the image around, or
-        adding constraints on the total activations."""
-        og = plt.imread('street.png')
-        crop = 2
-        img = preprocess(og)[np.newaxis, ...]
-        layer = g.get_tensor_by_name(features[3] + ':0')
-        n_els = layer.get_shape().as_list()[1]
-        neuron_i = np.random.randint(1000)
-        layer_vec = np.zeros((1, n_els))
-        layer_vec[0, neuron_i] = 1
-        neuron = tf.reduce_max(layer, 1)
-        saliency = tf.gradients(tf.reduce_sum(neuron), x)
-        for it_i in range(3):
-            print(it_i)
-            this_res = sess.run(saliency[0], feed_dict={
-                x: img,
-                layer: layer_vec,
-                'vgg/dropout_1/random_uniform:0': [[1.0]],
-                'vgg/dropout/random_uniform:0': [[1.0]]})
-            grad = this_res[0] / np.mean(np.abs(grad))
-            img = img[:, crop:-crop - 1, crop:-crop - 1, :]
-            img = imresize(img[0], (224, 224))[np.newaxis]
-            img += grad
-        plt.imshow(deprocess(img[0]))
+        # fc2
+        with tf.name_scope('fc2') as scope:
+            fc2w = tf.Variable(tf.truncated_normal([4096, 4096],
+                                                         dtype=tf.float32,
+                                                         stddev=1e-1), name='weights')
+            fc2b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            fc2l = tf.nn.bias_add(tf.matmul(self.fc1, fc2w), fc2b)
+            self.fc2 = tf.nn.relu(fc2l)
+            self.parameters += [fc2w, fc2b]
+
+        # fc3
+        with tf.name_scope('fc3') as scope:
+            fc3w = tf.Variable(tf.truncated_normal([4096, 1000],
+                                                         dtype=tf.float32,
+                                                         stddev=1e-1), name='weights')
+            fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),
+                                 trainable=True, name='biases')
+            self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)
+            self.parameters += [fc3w, fc3b]
+
+    def load_weights(self, weight_file, sess):
+        weights = np.load(weight_file)
+        keys = sorted(weights.keys())
+        for i, k in enumerate(keys):
+            # Break out when reach fc layers' weights.
+            if 'fc' in k:
+                break
+            else:
+                print i, k, np.shape(weights[k])
+                sess.run(self.parameters[i].assign(weights[k]))
 
 if __name__ == '__main__':
-    test_vgg_face()
+    sess = tf.Session()
+    imgs = tf.placeholder(tf.float32, [None, 224, 224, 3])
+    vgg = vgg16(imgs, 'vgg16_weights.npz', sess)
+
+    img1 = imread('laska.png', mode='RGB')
+    img1 = imresize(img1, (224, 224))
+
+    prob = sess.run(vgg.probs, feed_dict={vgg.imgs: [img1]})[0]
+    preds = (np.argsort(prob)[::-1])[0:5]
+    for p in preds:
+        print class_names[p], prob[p]

@@ -7,53 +7,53 @@ Date: Jan 2017
 """
 
 import tensorflow as tf
+import numpy as np
 from libs import vgg16
 from im_transf_net import create_net
 
 # TODO: Move style image to file argument
 # TODO: Ensure that vgg16 has trainable=False
 # TODO: Refactor into functions for readability
+# TODO: Add in GPU (g.device) when we push thru ssh to home gpu computer
 
 if __name__ == "__main__":
 
     # Training hyperparameters
     mscoco_shape = [256, 256, 3]  # We'll compress to this
-    batch_size = 4
+    batch_size = 2  # TODO: change back to 4
     n_iter = 40000
     learn_rate = 1e-3
     tv_reg_bounds = [1e-6, 1e-4]
     layers_feat_loss = ['relu2_2']
     layers_style_loss = ['relu1_2', 'relu2_2', 'relu3_3', 'relu4_3']
 
-    # Get vgg to use for perceptual loss network.
-    vggnet = vgg16.get_vgg_model()
-    gdef_vgg = vggnet['graph_def']
-
     # Load in image transformation network into default graph.
     shape = [batch_size] + mscoco_shape
-    gdef_img_t = create_net(shape).as_graph_def()
+    with tf.variable_scope('img_t_net'):
+        img_t_out = create_net(shape)
 
-    # Conjoin graphs into 1 graph.
-    with tf.Graph().as_default() as g:
-        X = tf.placeholder(tf.float32, shape=shape, name="input")
-        img_t_out = tf.import_graph_def(gdef_img_t,
-                                        input_map={'input:0': X},
-                                        return_elements=['output:0'],
-                                        name='img_t_net')
-        vgg_out = tf.import_graph_def(gdef_vgg,
-                                      input_map={'images:0': img_t_out},
-                                      name='vgg_net')
+    # Get vgg to use for perceptual loss network.
+    vggnet = vgg16.vgg16(img_t_out)
 
-    print gdef_vgg
+    # Get the input
+    g = tf.get_default_graph()
+    X = g.get_tensor_by_name('img_t_net/input:0')
 
-    # Define loss for optimization. We want to just train the image
-    # transformation network, and not VGG16.
-    varss = [op.outputs[0] for op in tf.get_default_graph().get_operations() if
-    op.type == "Variable"]
-    print varss
-    #with tf.Session(graph=g) as sess:
-        #train_vars = tf.trainable_variables()
-        #print train_vars
+    # TODO: Remove this.
+    print img_t_out.get_shape().as_list()
+    img = np.zeros((256, 256, 3))
+    img *= 0.0
+    img[0:128, :, 0] = 1.0
+    img = img[np.newaxis, :]
+    img2 = np.zeros((256, 256, 3))
+    img2[0:128, :, 0] = 0.5
+    img2 = img2[np.newaxis, :]
+    img = np.append(img, img2, axis=0)
+    print 'Running session'
+    with tf.Session() as sess:
+            vggnet.load_weights('libs/vgg16_weights.npz', sess)
+            sess.run(tf.initialize_all_variables())
+            #out = sess.run(vggnet.probs, feed_dict={X:img})
 
     # Prime MS-Coco dataqueuer.
 
