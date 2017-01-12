@@ -15,16 +15,16 @@ from matplotlib import pyplot as plt
 # TODO: Move style image to file argument
 # TODO: Ensure that vgg16 has trainable=False
 # TODO: Refactor into functions for readability
-# TODO: Add in GPU (g.device) when we push thru ssh to home gpu computer
 # TODO: Get to the bottom of learning how to feedforward from the middle of a
 # graph in a shape-dynamic fashion, without having to create multiple graphdefs
 # or graphs or using reset_default_graph().
 # TODO: Make code batch-proof.
 # TODO: My dynamic method for calculating the number of elements seems kind of
 # hacky.
+# TODO: do we need biases on the terms where we removed instance normalization?
 
 
-def create_loss_function(grams, target_grams, content_layers,
+def create_perceptual_loss(grams, target_grams, content_layers,
                          target_content_layers,
                          style_weights, content_weights):
     """Defines the perceptual loss function.
@@ -69,6 +69,35 @@ def create_loss_function(grams, target_grams, content_layers,
 
     total_loss = style_loss + content_loss
     return total_loss
+
+def create_tv_loss(X):
+    """Creates 2d TV loss using X as the input tensor. Acts on different colour
+    channels individually, and uses convolution as a means of calculating the
+    differences.
+
+    :param X:
+        4D Tensor
+    """
+    # These filters for the convolution will take the differences across the
+    # spatial dimensions. Constructing these on paper has to be done carefully,
+    # but can be easily understood  when one realizes that the sub-3x3 arrays
+    # should have no mixing terms as the RGB channels should not interact
+    # within this convolution. Thus, the 2 3x3 subarrays are identity and
+    # -1*identity. The filters should look like:
+    # v_filter = [ [(3x3)], [(3x3)] ]
+    # h_filter = [ [(3x3), (3x3)] ]
+    ident = np.array([[1, 0, 0],[0, 1, 0],[0, 0, 1]])
+    v_array = np.array([[ident],[-1*ident]])
+    h_array = np.array([[ident, -1*ident]])
+    v_filter = tf.constant(v_array, tf.float32)
+    h_filter = tf.constant(h_array, tf.float32)
+
+    vdiff = tf.nn.conv2d(X, v_filter, strides=[1,1,1,1], padding='VALID')
+    hdiff = tf.nn.conv2d(X, h_filter, strides=[1,1,1,1], padding='VALID')
+
+    loss = tf.reduce_sum(tf.square(hdiff)) + tf.reduce_sum(tf.square(vdiff))
+
+    return loss
 
 
 def get_style_layers(layer_names):
@@ -152,8 +181,10 @@ if __name__ == "__main__":
     content_targets = [tf.placeholder(tf.float32,
                        shape=[None, None, None, None], name='input')
                        for _ in loss_content_layers]
-    create_loss_function(input_img_grams, target_grams, content_layers,
+    perc_loss = create_perceptual_loss(input_img_grams, target_grams, content_layers,
                          content_targets, style_weights, content_weights)
+    tv_loss = create_tv_loss(g.get_tensor_by_name('img_t_net/output:0'))
+    total_loss = tf.add(perc_loss, tv_loss, name='loss')
 
     # Prime MS-Coco dataqueuer.
 
