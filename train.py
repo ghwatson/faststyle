@@ -22,6 +22,8 @@ from matplotlib import pyplot as plt
 # TODO: My dynamic method for calculating the number of elements seems kind of
 # hacky.
 # TODO: do we need biases on the terms where we removed instance normalization?
+# TODO: implement cross-validation for TV reg. For now we'll just use a fixed
+# beta.
 
 
 def create_perceptual_loss(grams, target_grams, content_layers,
@@ -127,7 +129,8 @@ if __name__ == "__main__":
     # Training hyperparameters
     mscoco_shape = [256, 256, 3]  # We'll compress to this
     batch_size = 2  # TODO: change back to 4
-    n_iter = 40000
+    n_epochs = 2
+    train_dir = '/media/ghwatson/STORAGE/data/train2014/'
     learn_rate = 1e-3
     tv_reg_bounds = [1e-6, 1e-4]
     loss_content_layers = ['conv2_2']
@@ -184,11 +187,31 @@ if __name__ == "__main__":
     perc_loss = create_perceptual_loss(input_img_grams, target_grams, content_layers,
                          content_targets, style_weights, content_weights)
     tv_loss = create_tv_loss(g.get_tensor_by_name('img_t_net/output:0'))
-    total_loss = tf.add(perc_loss, tv_loss, name='loss')
+    beta = tf.placeholder(tf.float32, shape=[1], name = 'tv_scale')
+    total_loss = tf.add(perc_loss, tf.mul(beta, tv_loss), name='loss')
 
     # Prime MS-Coco dataqueuer.
+    dl = dataloader(train_dir, n_epochs)
+    train_op = dl.train_op
 
-    # Load in style image.
+    with tf.Session() as sess:
+        # Initialization
+        sess.run(tf.initialize_variables(var_list))
+
+        # Perform training.
+        for batch in dl.next_batch():
+            # Collect content targets
+            content_data = sess.run(content_layers, feed_dict={X: batch})
+
+            # Perform optimization using feed dict with targets.
+
+
+            # Occasionally save a checkpoint.
+
+            # Occasionally stdout some data + write it to file.
+
+
+
 
     # Train.
 
