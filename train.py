@@ -11,6 +11,7 @@ import numpy as np
 from libs import vgg16
 from im_transf_net import create_net
 from matplotlib import pyplot as plt
+import datapipe
 
 # TODO: Move style image to file argument
 # TODO: Ensure that vgg16 has trainable=False
@@ -24,11 +25,12 @@ from matplotlib import pyplot as plt
 # TODO: do we need biases on the terms where we removed instance normalization?
 # TODO: implement cross-validation for TV reg. For now we'll just use a fixed
 # beta.
+# TODO: figure out how to truncate out vgg when saving the final model.
 
 
 def create_perceptual_loss(grams, target_grams, content_layers,
-                         target_content_layers,
-                         style_weights, content_weights):
+                           target_content_layers,
+                           style_weights, content_weights):
     """Defines the perceptual loss function.
 
     :param grams
@@ -72,6 +74,7 @@ def create_perceptual_loss(grams, target_grams, content_layers,
     total_loss = style_loss + content_loss
     return total_loss
 
+
 def create_tv_loss(X):
     """Creates 2d TV loss using X as the input tensor. Acts on different colour
     channels individually, and uses convolution as a means of calculating the
@@ -88,14 +91,14 @@ def create_tv_loss(X):
     # -1*identity. The filters should look like:
     # v_filter = [ [(3x3)], [(3x3)] ]
     # h_filter = [ [(3x3), (3x3)] ]
-    ident = np.array([[1, 0, 0],[0, 1, 0],[0, 0, 1]])
-    v_array = np.array([[ident],[-1*ident]])
+    ident = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    v_array = np.array([[ident], [-1*ident]])
     h_array = np.array([[ident, -1*ident]])
     v_filter = tf.constant(v_array, tf.float32)
     h_filter = tf.constant(h_array, tf.float32)
 
-    vdiff = tf.nn.conv2d(X, v_filter, strides=[1,1,1,1], padding='VALID')
-    hdiff = tf.nn.conv2d(X, h_filter, strides=[1,1,1,1], padding='VALID')
+    vdiff = tf.nn.conv2d(X, v_filter, strides=[1, 1, 1, 1], padding='VALID')
+    hdiff = tf.nn.conv2d(X, h_filter, strides=[1, 1, 1, 1], padding='VALID')
 
     loss = tf.reduce_sum(tf.square(hdiff)) + tf.reduce_sum(tf.square(vdiff))
 
@@ -127,10 +130,11 @@ def get_style_layers(layer_names):
 if __name__ == "__main__":
 
     # Training hyperparameters
-    mscoco_shape = [256, 256, 3]  # We'll compress to this
-    batch_size = 2  # TODO: change back to 4
-    n_epochs = 2
-    train_dir = '/media/ghwatson/STORAGE/data/train2014/'
+    mscoco_shape = [256, 256]   # We'll compress to this
+    batch_size = 5  # TODO: change back to 4
+    n_epochs = 1
+    # train_dir = '/media/ghwatson/STORAGE/data/train2014/'
+    train_dir = '/home/ghwatson/workspace/faststyle/mockshards/'
     learn_rate = 1e-3
     tv_reg_bounds = [1e-6, 1e-4]
     loss_content_layers = ['conv2_2']
@@ -158,7 +162,7 @@ if __name__ == "__main__":
     tf.reset_default_graph()
 
     # Load in image transformation network into default graph.
-    shape = [batch_size] + mscoco_shape
+    shape = [batch_size] + mscoco_shape + [3]
     with tf.variable_scope('img_t_net'):
         img_t_out = create_net(shape)
 
@@ -181,39 +185,63 @@ if __name__ == "__main__":
                       in content_layers_names]
 
     # Create loss function
-    content_targets = [tf.placeholder(tf.float32,
-                       shape=[None, None, None, None], name='input')
-                       for _ in loss_content_layers]
-    perc_loss = create_perceptual_loss(input_img_grams, target_grams, content_layers,
-                         content_targets, style_weights, content_weights)
+    content_targets = tuple(tf.placeholder(tf.float32,
+                            shape=[None, None, None, None], name='input')
+                            for _ in loss_content_layers)
+    perc_loss = create_perceptual_loss(input_img_grams, target_grams,
+                                       content_layers, content_targets,
+                                       style_weights, content_weights)
     tv_loss = create_tv_loss(g.get_tensor_by_name('img_t_net/output:0'))
-    beta = tf.placeholder(tf.float32, shape=[1], name = 'tv_scale')
-    total_loss = tf.add(perc_loss, tf.mul(beta, tv_loss), name='loss')
+    beta = tf.placeholder(tf.float32, shape=[], name='tv_scale')
+    loss = tf.add(perc_loss, tf.mul(beta, tv_loss), name='loss')
 
-    # Prime MS-Coco dataqueuer.
-    dl = dataloader(train_dir, n_epochs)
-    train_op = dl.train_op
+    # Prep for training
+    files = tf.train.match_filenames_once(train_dir + 'train-*')
+    batch_op = datapipe.batcher(files, batch_size, mscoco_shape, n_epochs)
+    train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
+                                   scope='img_t_net')
+    optimizer = tf.train.AdamOptimizer(learn_rate).minimize(loss,
+                                                            var_list=train_vars)
+    saver = tf.train.Saver()
 
+    #init_op = tf.group(tf.variables_initializer(train_vars),
+                       #tf.local_variables_initializer())
+    # TODO: resolve the bug here. we need more than just the scope listed in
+    # train_vars to get the pipeline working properly.
+    init_op = tf.group(tf.global_variables_initializer(),
+                       tf.local_variables_initializer())
+
+    # Begin training
     with tf.Session() as sess:
         # Initialization
-        sess.run(tf.initialize_variables(var_list))
+        sess.run(init_op)
 
-        # Perform training.
-        for batch in dl.next_batch():
-            # Collect content targets
-            content_data = sess.run(content_layers, feed_dict={X: batch})
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-            # Perform optimization using feed dict with targets.
+        try:
+            while not coord.should_stop():
+                batch = sess.run(batch_op)
 
+                # Collect content targets
+                content_data = sess.run(content_layers,
+                                        feed_dict={'img_t_net/output:0': batch})
 
-            # Occasionally save a checkpoint.
+                # Perform optimization using feed dict with targets.
+                # TODO: swap out the hardcoded beta for cross_validation
+                sess.run(optimizer, feed_dict={X: batch,
+                                               content_targets: content_data,
+                                               beta: 1e-5})
 
-            # Occasionally stdout some data + write it to file.
+                # Occasionally save a checkpoint.
 
+                # Occasionally stdout some data + write it to file.
+        except tf.errors.OutOfRangeError:
+            print('Done training.')
+        finally:
+            coord.request_stop()
 
-
-
-    # Train.
+        coord.join(threads)
 
     # Save the model (the image transformation network) for later usage in
     # predict.py.
