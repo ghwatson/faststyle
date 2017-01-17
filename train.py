@@ -14,18 +14,15 @@ from matplotlib import pyplot as plt
 import datapipe
 
 # TODO: Move style image to file argument
-# TODO: Ensure that vgg16 has trainable=False
 # TODO: Refactor into functions for readability
 # TODO: Get to the bottom of learning how to feedforward from the middle of a
 # graph in a shape-dynamic fashion, without having to create multiple graphdefs
 # or graphs or using reset_default_graph().
-# TODO: Make code batch-proof.
 # TODO: My dynamic method for calculating the number of elements seems kind of
 # hacky.
 # TODO: do we need biases on the terms where we removed instance normalization?
 # TODO: implement cross-validation for TV reg. For now we'll just use a fixed
 # beta.
-# TODO: figure out how to truncate out vgg when saving the final model.
 
 
 def create_perceptual_loss(grams, target_grams, content_layers,
@@ -122,8 +119,9 @@ def get_style_layers(layer_names):
     for i, layer in enumerate(style_layers):
         shape = tf.shape(layer)
         num_elements = tf.reduce_sum(tf.ones(shape[1::]))
-        features_matrix = tf.reshape(layer, tf.pack([-1, shape[3]]))
-        gram_matrix = tf.matmul(tf.transpose(features_matrix), features_matrix)
+        features_matrix = tf.reshape(layer, tf.pack([shape[0], -1, shape[3]]))
+        gram_matrix = tf.matmul(features_matrix, features_matrix,
+                                transpose_a=True)
         gram_matrix = gram_matrix / num_elements
         grams.append(gram_matrix)
     return grams
@@ -143,9 +141,11 @@ if __name__ == "__main__":
     loss_style_layers = ['conv1_2', 'conv2_2', 'conv3_3', 'conv4_3']
     content_weights = [1.0]
     style_weights = [1.0, 1.0, 1.0, 1.0]
+    style_weights = [0,0,0,0]
 
     # Load in style image that will define the model.
     style_img = plt.imread('style_images/starry_night_crop.jpg')
+    model_name = 'starry_night'
     style_img = style_img[np.newaxis, :].astype(np.float32)
 
     # Get target Gram matrices from the style image.
@@ -196,6 +196,8 @@ if __name__ == "__main__":
     tv_loss = create_tv_loss(g.get_tensor_by_name('img_t_net/output:0'))
     beta = tf.placeholder(tf.float32, shape=[], name='tv_scale')
     loss = tf.add(perc_loss, tf.mul(beta, tv_loss), name='loss')
+    with tf.name_scope('summaries'):
+        tf.summary.scalar('loss', loss)
 
     # Prep for training
     files = tf.train.match_filenames_once(train_dir + 'train-*')
@@ -206,9 +208,13 @@ if __name__ == "__main__":
     optimizer = tf.train.AdamOptimizer(learn_rate).minimize(loss,
                                                             var_list=train_vars)
     saver = tf.train.Saver()
-
+    merged = tf.summary.merge_all()
+    train_writer = tf.train.SummaryWriter('summaries/train')
     init_op = tf.group(tf.global_variables_initializer(),
                        tf.local_variables_initializer())
+    img_t_net_vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,
+                                       scope='img_t_net')
+    final_saver = tf.train.Saver(img_t_net_vars)
 
     # Begin training
     with tf.Session() as sess:
@@ -219,6 +225,7 @@ if __name__ == "__main__":
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
         try:
+            step = 0
             while not coord.should_stop():
                 batch = sess.run(batch_op)
 
@@ -226,23 +233,34 @@ if __name__ == "__main__":
                 content_data = sess.run(content_layers,
                                         feed_dict={'img_t_net/output:0': batch})
 
-                # Perform optimization using feed dict with targets.
-                # TODO: swap out the hardcoded beta for cross_validation
-                sess.run(optimizer, feed_dict={X: batch,
-                                               content_targets: content_data,
-                                               beta: 1e-5})
 
-                if (i % 10 == 0):
+                # TODO: swap out the hard-coded beta with cross-validation
+                feed_dict = {X: batch,
+                             content_targets: content_data,
+                             beta: 0.}
+                if (step % 10 == 0):
                     # Save a checkpoint
+                    save_path = 'training/' + model_name + '.ckpt'
+                    saver.save(sess, save_path, global_step=step)
 
                     # Collect some diagnostic data for Tensorboard.
+                    summary, _, loss_out = sess.run([merged, optimizer, loss],
+                                          feed_dict=feed_dict)
+                    train_writer.add_summary(summary, step)
+                else:
+                    _, loss_out = sess.run([optimizer, loss], feed_dict=feed_dict)
+                print loss_out
+
+
+                step += 1
 
         except tf.errors.OutOfRangeError:
             print('Done training.')
         finally:
+            # Save the model (the image transformation network) for later usage in
+            # predict.py
+            final_saver.save(sess, 'models/' + model_name + '_final.ckpt')
+
             coord.request_stop()
 
         coord.join(threads)
-
-    # Save the model (the image transformation network) for later usage in
-    # predict.py.
