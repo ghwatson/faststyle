@@ -61,12 +61,14 @@ def create_perceptual_loss(grams, target_grams, content_layers,
         style_losses.append(loss)
     style_loss = tf.add_n(style_losses)
 
-    # Content loss (identical to above code for style)
+    # Content loss (essentially identical to above code for style)
     content_losses = []
     for i in xrange(num_content_layers):
-        gram, target_gram = grams[i], target_grams[i]
-        content_weight = style_weights[i]
-        loss = tf.reduce_sum(tf.square(gram - tf.constant(target_gram)))
+        content_layer = content_layers[i]
+        target_content_layer = target_content_layers[i]
+        content_weight = content_weights[i]
+        loss = tf.reduce_sum(tf.squared_difference(content_layer,
+                                                   target_content_layer))
         loss = content_weight * loss
         content_losses.append(loss)
     content_loss = tf.add_n(content_losses)
@@ -153,12 +155,12 @@ if __name__ == "__main__":
         vggnet = vgg16.vgg16(X_vgg)
     with tf.Session() as sess:
         vggnet.load_weights('libs/vgg16_weights.npz', sess)
-        print 'starting gram'
+        print 'Precomputing target style layers.'
         target_grams = sess.run(get_style_layers(loss_style_layers),
                                 feed_dict={'vgg/input:0': style_img})
-        print 'done gram'
 
     # Clean up so we can re-create vgg connected to our image network.
+    print 'Resetting default graph.'
     tf.reset_default_graph()
 
     # Load in image transformation network into default graph.
@@ -197,17 +199,14 @@ if __name__ == "__main__":
 
     # Prep for training
     files = tf.train.match_filenames_once(train_dir + 'train-*')
-    batch_op = datapipe.batcher(files, batch_size, mscoco_shape, n_epochs)
+    with tf.variable_scope('input_pipe'), tf.device('/cpu:0'):
+        batch_op = datapipe.batcher(files, batch_size, mscoco_shape, n_epochs)
     train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                    scope='img_t_net')
     optimizer = tf.train.AdamOptimizer(learn_rate).minimize(loss,
                                                             var_list=train_vars)
     saver = tf.train.Saver()
 
-    #init_op = tf.group(tf.variables_initializer(train_vars),
-                       #tf.local_variables_initializer())
-    # TODO: resolve the bug here. we need more than just the scope listed in
-    # train_vars to get the pipeline working properly.
     init_op = tf.group(tf.global_variables_initializer(),
                        tf.local_variables_initializer())
 
@@ -233,9 +232,11 @@ if __name__ == "__main__":
                                                content_targets: content_data,
                                                beta: 1e-5})
 
-                # Occasionally save a checkpoint.
+                if (i % 10 == 0):
+                    # Save a checkpoint
 
-                # Occasionally stdout some data + write it to file.
+                    # Collect some diagnostic data for Tensorboard.
+
         except tf.errors.OutOfRangeError:
             print('Done training.')
         finally:

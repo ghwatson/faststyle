@@ -3,9 +3,6 @@ This file is used for construction of the data input pipeline. It takes care of
 batching and preprocessing, and can be used to repeatedly draw a fresh batch
 for use in training.
 """
-# TODO: Delegate pipeline stuff to CPU so that GPU can do the computations that
-# it is advantageous for.
-
 
 import tensorflow as tf
 
