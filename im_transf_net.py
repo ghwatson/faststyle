@@ -179,9 +179,9 @@ def inst_norm(inputs, epsilon=1e-3, suffix=''):
     # Create scale + shift. Exclude batch dimension.
     stat_shape = inputs.get_shape().as_list()
     scale = tf.get_variable('INscale'+suffix,
-                            initializer=tf.ones(stat_shape[1::]))
+                            initializer=tf.ones(stat_shape[3]))
     shift = tf.get_variable('INshift'+suffix,
-                            initializer=tf.zeros(stat_shape[1::]))
+                            initializer=tf.zeros(stat_shape[3]))
 
     inst_means, inst_vars = tf.nn.moments(inputs, axes=[1, 2],
                                           keep_dims=True)
@@ -239,7 +239,7 @@ if __name__ == "__main__":
     h = create_net(img.shape)
     g = tf.get_default_graph()
     with tf.Session() as sess:
-        sess.run(tf.initialize_all_variables())
+        sess.run(tf.global_variables_initializer())
         X = g.get_tensor_by_name('input:0')
         scale = g.get_tensor_by_name('initconv_0/INscale:0')
         out = sess.run(h, feed_dict={X: img})
