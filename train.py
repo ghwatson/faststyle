@@ -12,19 +12,70 @@ from libs import vgg16
 from im_transf_net import create_net
 from matplotlib import pyplot as plt
 import datapipe
+import os
+import argparse
 
-# TODO: Move style image to file argument
 # TODO: Refactor into functions for readability
-# TODO: Get to the bottom of learning how to feedforward from the middle of a
-# graph in a shape-dynamic fashion, without having to create multiple graphdefs
-# or graphs or using reset_default_graph().
-# TODO: My dynamic method for calculating the number of elements seems kind of
-# hacky.
 # TODO: do we need biases on the terms where we removed instance normalization?
 # TODO: implement cross-validation for TV reg. For now we'll just use a fixed
 # beta.
 # TODO: verify that the gradient isn't coming into play for the target content
 # data.
+# TODO: setup single beta input for if don't want to do CV.
+
+
+def setup_parser():
+    """Used to interface with the command-line."""
+    # TODO: remove the defaults I put in for my own convenience.
+    parser = argparse.ArgumentParser(
+                description='Train a style transfer net.')
+    parser.add_argument('--train_dir',
+                        default='/home/ghwatson/workspace/faststyle/mockshards/',
+                        help='Directory of training  data.')
+    parser.add_argument('--style_img_path',
+                        default='style_images/starry_night_crop.jpg',
+                        help='Path to style template.')
+    parser.add_argument('--model_name',
+                        default='starry_night',
+                        help='Name of model being trained.')
+    parser.add_argument('--learn_rate',
+                        help='Learning rate for optimizer.',
+                        default=1e-4, type=float)
+    parser.add_argument('--batch_size',
+                        help='Batch size for training.',
+                        default=4, type=int)
+    parser.add_argument('--n_epochs',
+                        help='Number of training epochs.',
+                        default=2, type=int)
+    parser.add_argument('--preprocess_size',
+                        help='Preprocessing dimensions for training.',
+                        default=[256, 256], nargs=2, type=int)
+    parser.add_argument('--run_name',
+                        help='Name of run. Used to create Tensoboard log.',
+                        default=None)
+    parser.add_argument('--tv_bounds',
+                        help='Bounds for CV on TV regularization.',
+                        nargs=2,
+                        type=int)
+    parser.add_argument('--loss_content_layers',
+                        help='Names of layers to define content loss.',
+                        nargs='*',
+                        default=['conv2_2'])
+    parser.add_argument('--loss_style_layers',
+                        help='Names of layers to define style loss.',
+                        nargs='*',
+                        default=['conv1_2', 'conv2_2', 'conv3_3', 'conv4_3'])
+    parser.add_argument('--content_weights',
+                        help='Weights corresponding to content layers.',
+                        nargs='*',
+                        default=[1.0],
+                        type=float)
+    parser.add_argument('--style_weights',
+                        help='Weights corresponding to style layers.',
+                        nargs='*',
+                        default=[1.0, 1.0, 1.0, 1.0],
+                        type=float)
+    return parser
 
 
 def create_perceptual_loss(grams, target_grams, content_layers,
@@ -132,24 +183,29 @@ def get_style_layers(layer_names):
     return grams
 
 
-if __name__ == "__main__":
+def main(args):
+    """main
 
-    # Training hyperparameters
-    mscoco_shape = [256, 256]   # We'll compress to this
-    batch_size = 4  # TODO: change back to 4
-    n_epochs = 3
-    # train_dir = '/media/ghwatson/STORAGE/data/train2014/'
-    train_dir = '/home/ghwatson/workspace/faststyle/mockshards/'
-    learn_rate = 1e-4
-    tv_reg_bounds = [1e-6, 1e-4]
-    loss_content_layers = ['conv2_2']
-    loss_style_layers = ['conv1_2', 'conv2_2', 'conv3_3', 'conv4_3']
-    content_weights = [1.0]
-    style_weights = [1.0, 1.0, 1.0, 1.0]
+    :param args:
+        argparse.Namespace object from argparse.parse_args().
+    """
+    # Unpack command-line arguments.
+    train_dir = args.train_dir
+    style_img_path = args.style_img_path
+    model_name = args.model_name
+    preprocess_size = args.preprocess_size
+    batch_size = args.batch_size
+    n_epochs = args.n_epochs
+    run_name = args.run_name
+    learn_rate = args.learn_rate
+    tv_bounds = args.tv_bounds
+    loss_content_layers = args.loss_content_layers
+    loss_style_layers = args.loss_style_layers
+    content_weights = args.content_weights
+    style_weights = args.style_weights
 
     # Load in style image that will define the model.
-    style_img = plt.imread('style_images/starry_night_crop.jpg')
-    model_name = 'starry_night'
+    style_img = plt.imread(style_img_path)
     style_img = style_img[np.newaxis, :].astype(np.float32)
 
     # Get target Gram matrices from the style image.
@@ -168,7 +224,7 @@ if __name__ == "__main__":
     tf.reset_default_graph()
 
     # Load in image transformation network into default graph.
-    shape = [batch_size] + mscoco_shape + [3]
+    shape = [batch_size] + preprocess_size + [3]
     with tf.variable_scope('img_t_net'):
         img_t_out = create_net(shape)
 
@@ -176,7 +232,7 @@ if __name__ == "__main__":
     with tf.variable_scope('vgg'):
         vggnet = vgg16.vgg16(img_t_out)
 
-    # Get the input
+    # Get the input/output
     g = tf.get_default_graph()
     X = g.get_tensor_by_name('img_t_net/input:0')
     Y = g.get_tensor_by_name('img_t_net/output:0')
@@ -203,23 +259,45 @@ if __name__ == "__main__":
     with tf.name_scope('summaries'):
         tf.summary.scalar('loss', loss)
 
-    # Prep for training
-    files = tf.train.match_filenames_once(train_dir + 'train-*')
+    # Setup input pipeline (delegate it to CPU to let GPU handle neural net)
+    files = tf.train.match_filenames_once(train_dir + '/train-*')
     with tf.variable_scope('input_pipe'), tf.device('/cpu:0'):
-        batch_op = datapipe.batcher(files, batch_size, mscoco_shape, n_epochs)
+        batch_op = datapipe.batcher(files, batch_size, preprocess_size,
+                                    n_epochs)
+
+    # We do not want to train VGG, so we must grab the subset.
     train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
                                    scope='img_t_net')
+
+    # Setup step + optimizer
     global_step = tf.Variable(0, name='global_step', trainable=False)
     optimizer = tf.train.AdamOptimizer(learn_rate).minimize(loss, global_step,
                                                             train_vars)
+
+    # Setup subdirectory for this run's Tensoboard logs.
+    if run_name is None:
+        current_dirs = [name for name in os.listdir('./summaries/train/')
+                        if os.path.isdir('./summaries/train/' + name)]
+        name = 'run0'
+        count = 0
+        while name in current_dirs:
+            count += 1
+            name = 'run{}'.format(count)
+        run_name = name
+        os.makedirs(run_name)
+
+    # Savers and summary writers
     saver = tf.train.Saver()
     final_saver = tf.train.Saver(train_vars)
     merged = tf.summary.merge_all()
-    train_writer = tf.summary.FileWriter('summaries/train')
+    full_log_path = './summaries/train/' + run_name
+    train_writer = tf.summary.FileWriter(full_log_path)
+
+    # We must include local variables because of batch pipeline.
     init_op = tf.group(tf.global_variables_initializer(),
                        tf.local_variables_initializer())
 
-    # Begin training
+    # Begin training.
     with tf.Session() as sess:
         # Initialization
         sess.run(init_op)
@@ -267,3 +345,9 @@ if __name__ == "__main__":
             coord.request_stop()
 
         coord.join(threads)
+
+
+if __name__ == "__main__":
+    parser = setup_parser()
+    args = parser.parse_args()
+    main(args)
