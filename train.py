@@ -40,7 +40,7 @@ def setup_parser():
                         help='Name of model being trained.')
     parser.add_argument('--learn_rate',
                         help='Learning rate for optimizer.',
-                        default=1e-4, type=float)
+                        default=1e-3, type=float)
     parser.add_argument('--batch_size',
                         help='Batch size for training.',
                         default=4, type=int)
@@ -75,6 +75,14 @@ def setup_parser():
                         nargs='*',
                         default=[1.0, 1.0, 1.0, 1.0],
                         type=float)
+    parser.add_argument('--num_steps_ckpt',
+                        help='Interval after which we save a checkpoint.',
+                        default=1000,
+                        type=int)
+    parser.add_argument('--num_pipe_buffer',
+                        help='Number of images loaded into RAM in pipeline.',
+                        default=4000,
+                        type=int)
     return parser
 
 
@@ -203,6 +211,8 @@ def main(args):
     loss_style_layers = args.loss_style_layers
     content_weights = args.content_weights
     style_weights = args.style_weights
+    num_steps_ckpt = args.num_steps_ckpt
+    num_pipe_buffer = args.num_pipe_buffer
 
     # Load in style image that will define the model.
     style_img = plt.imread(style_img_path)
@@ -263,7 +273,7 @@ def main(args):
     files = tf.train.match_filenames_once(train_dir + '/train-*')
     with tf.variable_scope('input_pipe'), tf.device('/cpu:0'):
         batch_op = datapipe.batcher(files, batch_size, preprocess_size,
-                                    n_epochs)
+                                    n_epochs, num_pipe_buffer)
 
     # We do not want to train VGG, so we must grab the subset.
     train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
@@ -298,6 +308,7 @@ def main(args):
                        tf.local_variables_initializer())
 
     # Begin training.
+    print 'Starting training...'
     with tf.Session() as sess:
         # Initialization
         sess.run(init_op)
@@ -319,11 +330,16 @@ def main(args):
                 feed_dict = {X: batch,
                              content_targets: content_data,
                              beta: 0.}
-                if (current_step % 10 == 0):
+                if (current_step % num_steps_ckpt == 0):
                     # Save a checkpoint
                     save_path = 'training/' + model_name + '.ckpt'
                     saver.save(sess, save_path, global_step=global_step)
+                    summary, _, loss_out = sess.run([merged, optimizer, loss],
+                                                    feed_dict=feed_dict)
+                    train_writer.add_summary(summary, current_step)
+                    print current_step, loss_out
 
+                elif (current_step % 10 == 0):
                     # Collect some diagnostic data for Tensorboard.
                     summary, _, loss_out = sess.run([merged, optimizer, loss],
                                                     feed_dict=feed_dict)
