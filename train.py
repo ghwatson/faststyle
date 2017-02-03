@@ -86,40 +86,21 @@ def setup_parser():
     return parser
 
 
-def create_perceptual_loss(grams, target_grams, content_layers,
-                           target_content_layers,
-                           style_weights, content_weights):
-    """Defines the perceptual loss function.
+def create_content_loss(content_layers, target_content_layers,
+                        content_weights):
+    """Defines the content loss function.
 
-    :param grams
-        List of tensors for Gram matrices derived from training graph.
-    :param target_grams
-        List of numpy arrays for Gram matrices precomputed from style image.
     :param content_layers
         List of tensors for layers derived from training graph.
     :param target_content_layers
         List of placeholders to be filled with content layer data.
-    :param style_weights
-        List of floats to be used as weights for style layers.
     :param content_weights
         List of floats to be used as weights for content layers.
     """
     assert(len(target_content_layers) == len(content_layers))
-    assert(len(grams) == len(target_grams))
-    num_style_layers = len(target_grams)
     num_content_layers = len(target_content_layers)
 
-    # Style loss
-    style_losses = []
-    for i in xrange(num_style_layers):
-        gram, target_gram = grams[i], target_grams[i]
-        style_weight = style_weights[i]
-        loss = tf.reduce_sum(tf.square(gram - tf.constant(target_gram)))
-        loss = style_weight * loss
-        style_losses.append(loss)
-    style_loss = tf.add_n(style_losses)
-
-    # Content loss (similar to above code, except normalization is here)
+    # Content loss
     content_losses = []
     for i in xrange(num_content_layers):
         content_layer = content_layers[i]
@@ -128,14 +109,37 @@ def create_perceptual_loss(grams, target_grams, content_layers,
         loss = tf.reduce_sum(tf.squared_difference(content_layer,
                                                    target_content_layer))
         loss = content_weight * loss
-        b, h, w, c = content_layer.get_shape().as_list()
+        _, h, w, c = content_layer.get_shape().as_list()
         num_elements = h * w * c
-        loss = loss / num_elements
+        loss = loss / tf.cast(num_elements, tf.float32)
         content_losses.append(loss)
-    content_loss = tf.add_n(content_losses)
+    content_loss = tf.add_n(content_losses, name='content_loss')
+    return content_loss
 
-    total_loss = style_loss + content_loss
-    return total_loss
+
+def create_style_loss(grams, target_grams, style_weights):
+    """Defines the style loss function.
+
+    :param grams
+        List of tensors for Gram matrices derived from training graph.
+    :param target_grams
+        List of numpy arrays for Gram matrices precomputed from style image.
+    :param style_weights
+        List of floats to be used as weights for style layers.
+    """
+    assert(len(grams) == len(target_grams))
+    num_style_layers = len(target_grams)
+
+    # Style loss (Note normalization is included in gram matrices already)
+    style_losses = []
+    for i in xrange(num_style_layers):
+        gram, target_gram = grams[i], target_grams[i]
+        style_weight = style_weights[i]
+        loss = tf.reduce_sum(tf.square(gram - tf.constant(target_gram)))
+        loss = style_weight * loss
+        style_losses.append(loss)
+    style_loss = tf.add_n(style_losses, name='style_loss')
+    return style_loss
 
 
 def create_tv_loss(X):
@@ -260,14 +264,22 @@ def main(args):
                             shape=[None, None, None, None],
                             name='content_input_{}'.format(i))
                             for i, _ in enumerate(loss_content_layers))
-    perc_loss = create_perceptual_loss(input_img_grams, target_grams,
-                                       content_layers, content_targets,
-                                       style_weights, content_weights)
+    # perc_loss = create_perceptual_loss(input_img_grams, target_grams,
+                                       # content_layers, content_targets,
+                                       # style_weights, content_weights)
+    cont_loss = create_content_loss(content_layers, content_targets,
+                                    content_weights)
+    style_loss = create_style_loss(input_img_grams, target_grams,
+                                   style_weights)
     tv_loss = create_tv_loss(Y)
     beta = tf.placeholder(tf.float32, shape=[], name='tv_scale')
-    loss = tf.add(perc_loss, tf.mul(beta, tv_loss), name='loss')
+    # loss = tf.add(perc_loss, tf.mul(beta, tv_loss), name='loss')
+    loss = cont_loss + style_loss + beta * tv_loss
     with tf.name_scope('summaries'):
         tf.summary.scalar('loss', loss)
+        tf.summary.scalar('style_loss', loss)
+        tf.summary.scalar('content_loss', cont_loss)
+        tf.summary.scalar('tv_loss', tv_loss)
 
     # Setup input pipeline (delegate it to CPU to let GPU handle neural net)
     files = tf.train.match_filenames_once(train_dir + '/train-*')
