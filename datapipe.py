@@ -21,7 +21,7 @@ def preprocessing(image, resize_shape):
     if resize_shape is None:
         return image
     else:
-        image = tf.image.resize_images(image, size=resize_shape)
+        image = tf.image.resize_images(image, size=resize_shape, method=2)
         return image
 
 
