@@ -25,11 +25,11 @@ def setup_parser():
                 description='Train a style transfer net.')
     parser.add_argument('--train_dir',
                         help='Directory of training data.')
-    parser.add_argument('--style_img_path',
-                        help='Path to style template image.')
     parser.add_argument('--model_name',
-                        default='starry_night',
                         help='Name of model being trained.')
+    parser.add_argument('--style_img_path',
+                        default='./style_images/style_denoised_starry.jpg',
+                        help='Path to style template image.')
     parser.add_argument('--learn_rate',
                         help='Learning rate for optimizer.',
                         default=1e-3, type=float)
@@ -50,7 +50,7 @@ def setup_parser():
     parser.add_argument('--loss_content_layers',
                         help='Names of layers to define content loss.',
                         nargs='*',
-                        default=['conv2_2'])
+                        default=['conv3_3'])
     parser.add_argument('--loss_style_layers',
                         help='Names of layers to define style loss.',
                         nargs='*',
@@ -59,12 +59,12 @@ def setup_parser():
                         help="""Weights that multiply the content loss
                         terms.""",
                         nargs='*',
-                        default=[1.0],
+                        default=[3.e-7],
                         type=float)
     parser.add_argument('--style_weights',
                         help="""Weights that multiply the style loss terms.""",
                         nargs='*',
-                        default=[1.0, 1.0, 1.0, 1.0],
+                        default=[1.e2, 1.e2, 1.e2, 1.e2],
                         type=float)
     parser.add_argument('--num_steps_ckpt',
                         help="""Save a checkpoint everytime this number of
@@ -85,7 +85,7 @@ def setup_parser():
                         type=int)
     parser.add_argument('--beta',
                         help="""TV regularization weight.""",
-                        default=0.,
+                        default=1.e-11,
                         type=float)
     parser.add_argument('--style_target_resize',
                         help="""Scale factor to apply to the style target image.
