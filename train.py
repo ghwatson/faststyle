@@ -14,27 +14,19 @@ from matplotlib import pyplot as plt
 import datapipe
 import os
 import argparse
+from scipy.misc import imresize
 
 # TODO: Refactor into functions for readability
-# TODO: do we need biases on the terms where we removed instance normalization?
-# TODO: implement cross-validation for TV reg. For now we'll just use a fixed
-# beta.
-# TODO: verify that the gradient isn't coming into play for the target content
-# data.
-# TODO: setup single beta input for if don't want to do CV.
 
 
 def setup_parser():
     """Used to interface with the command-line."""
-    # TODO: remove the defaults I put in for my own convenience.
     parser = argparse.ArgumentParser(
                 description='Train a style transfer net.')
     parser.add_argument('--train_dir',
-                        default='/home/ghwatson/workspace/faststyle/mockshards/',
-                        help='Directory of training  data.')
+                        help='Directory of training data.')
     parser.add_argument('--style_img_path',
-                        default='style_images/starry_night_crop.jpg',
-                        help='Path to style template.')
+                        help='Path to style template image.')
     parser.add_argument('--model_name',
                         default='starry_night',
                         help='Name of model being trained.')
@@ -48,15 +40,13 @@ def setup_parser():
                         help='Number of training epochs.',
                         default=2, type=int)
     parser.add_argument('--preprocess_size',
-                        help='Preprocessing dimensions for training.',
+                        help="""Dimensions to resize images to before passing
+                        them into the image transformation network.""",
                         default=[256, 256], nargs=2, type=int)
     parser.add_argument('--run_name',
-                        help='Name of run. Used to create Tensoboard log.',
+                        help="""Name of log directory within the Tensoboard
+                        directory (./summaries).""",
                         default=None)
-    parser.add_argument('--tv_bounds',
-                        help='Bounds for CV on TV regularization.',
-                        nargs=2,
-                        type=int)
     parser.add_argument('--loss_content_layers',
                         help='Names of layers to define content loss.',
                         nargs='*',
@@ -66,23 +56,41 @@ def setup_parser():
                         nargs='*',
                         default=['conv1_2', 'conv2_2', 'conv3_3', 'conv4_3'])
     parser.add_argument('--content_weights',
-                        help='Weights corresponding to content layers.',
+                        help="""Weights that multiply the content loss
+                        terms.""",
                         nargs='*',
                         default=[1.0],
                         type=float)
     parser.add_argument('--style_weights',
-                        help='Weights corresponding to style layers.',
+                        help="""Weights that multiply the style loss terms.""",
                         nargs='*',
                         default=[1.0, 1.0, 1.0, 1.0],
                         type=float)
     parser.add_argument('--num_steps_ckpt',
-                        help='Interval after which we save a checkpoint.',
+                        help="""Save a checkpoint everytime this number of
+                        steps passes in training.""",
                         default=1000,
                         type=int)
     parser.add_argument('--num_pipe_buffer',
-                        help='Number of images loaded into RAM in pipeline.',
+                        help="""Number of images loaded into RAM in pipeline.
+                        The larger, the better the shuffling, but the more RAM
+                        filled, and a slower startup.""",
                         default=4000,
                         type=int)
+    parser.add_argument('--num_steps_break',
+                        help="""Max on number of steps. Training ends when
+                        either num_epochs or this is reached (whichever comes
+                        first).""",
+                        default=-1,
+                        type=int)
+    parser.add_argument('--beta',
+                        help="""TV regularization weight.""",
+                        default=0.,
+                        type=float)
+    parser.add_argument('--style_target_resize',
+                        help="""Scale factor to apply to the style target image.
+                        Can change the features that get pronounced.""",
+                        default=1.0, type=float)
     return parser
 
 
@@ -188,9 +196,9 @@ def get_style_layers(layer_names):
         shape = layer.get_shape().as_list()
         num_elements = shape[1] * shape[2] * shape[3]
         features_matrix = tf.reshape(layer, tf.pack([shape[0], -1, shape[3]]))
-        gram_matrix = tf.matmul(features_matrix, features_matrix,
-                                transpose_a=True)
-        gram_matrix = gram_matrix / tf.cast(num_elements, tf.float32)
+        gram_matrix = tf.batch_matmul(features_matrix, features_matrix,
+                                      adj_x=True)
+        gram_matrix = gram_matrix / tf.cast(num_elements**2, tf.float32)
         grams.append(gram_matrix)
     return grams
 
@@ -210,16 +218,20 @@ def main(args):
     n_epochs = args.n_epochs
     run_name = args.run_name
     learn_rate = args.learn_rate
-    tv_bounds = args.tv_bounds
     loss_content_layers = args.loss_content_layers
     loss_style_layers = args.loss_style_layers
     content_weights = args.content_weights
     style_weights = args.style_weights
     num_steps_ckpt = args.num_steps_ckpt
     num_pipe_buffer = args.num_pipe_buffer
+    num_steps_break = args.num_steps_break
+    beta_val = args.beta
+    style_target_resize = args.style_target_resize
 
     # Load in style image that will define the model.
     style_img = plt.imread(style_img_path)
+    if style_target_resize != 1.0:
+        style_img = imresize(style_img, style_target_resize, 'bicubic')
     style_img = style_img[np.newaxis, :].astype(np.float32)
 
     # Get target Gram matrices from the style image.
@@ -264,22 +276,18 @@ def main(args):
                             shape=[None, None, None, None],
                             name='content_input_{}'.format(i))
                             for i, _ in enumerate(loss_content_layers))
-    # perc_loss = create_perceptual_loss(input_img_grams, target_grams,
-                                       # content_layers, content_targets,
-                                       # style_weights, content_weights)
     cont_loss = create_content_loss(content_layers, content_targets,
                                     content_weights)
     style_loss = create_style_loss(input_img_grams, target_grams,
                                    style_weights)
     tv_loss = create_tv_loss(Y)
     beta = tf.placeholder(tf.float32, shape=[], name='tv_scale')
-    # loss = tf.add(perc_loss, tf.mul(beta, tv_loss), name='loss')
     loss = cont_loss + style_loss + beta * tv_loss
     with tf.name_scope('summaries'):
         tf.summary.scalar('loss', loss)
-        tf.summary.scalar('style_loss', loss)
+        tf.summary.scalar('style_loss', style_loss)
         tf.summary.scalar('content_loss', cont_loss)
-        tf.summary.scalar('tv_loss', tv_loss)
+        tf.summary.scalar('tv_loss', beta*tv_loss)
 
     # Setup input pipeline (delegate it to CPU to let GPU handle neural net)
     files = tf.train.match_filenames_once(train_dir + '/train-*')
@@ -300,13 +308,12 @@ def main(args):
     if run_name is None:
         current_dirs = [name for name in os.listdir('./summaries/train/')
                         if os.path.isdir('./summaries/train/' + name)]
-        name = 'run0'
+        name = model_name + '0'
         count = 0
         while name in current_dirs:
             count += 1
-            name = 'run{}'.format(count)
+            name = model_name + '{}'.format(count)
         run_name = name
-        os.makedirs(run_name)
 
     # Savers and summary writers
     saver = tf.train.Saver()
@@ -338,10 +345,9 @@ def main(args):
                 content_data = sess.run(content_layers,
                                         feed_dict={Y: batch})
 
-                # TODO: swap out the hard-coded beta with cross-validation
                 feed_dict = {X: batch,
                              content_targets: content_data,
-                             beta: 0.}
+                             beta: beta_val}
                 if (current_step % num_steps_ckpt == 0):
                     # Save a checkpoint
                     save_path = 'training/' + model_name + '.ckpt'
@@ -363,6 +369,10 @@ def main(args):
                     _, loss_out = sess.run([optimizer, loss],
                                            feed_dict=feed_dict)
 
+                # Throw error if we reach number of steps to break after.
+                if current_step == num_steps_break:
+                    print('Done training.')
+                    break
         except tf.errors.OutOfRangeError:
             print('Done training.')
         finally:
