@@ -96,7 +96,7 @@ def conv2d(X, n_ch_in, n_ch_out, kernel_size, strides, name=None,
     W = tf.get_variable(name=name,
                         shape=shape,
                         dtype=tf.float32,
-                        initializer=tf.random_normal_initializer())
+                        initializer=tf.random_normal_initializer(stddev=0.1))
     h = tf.nn.conv2d(X,
                      filter=W,
                      strides=strides,
