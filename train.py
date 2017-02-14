@@ -59,12 +59,12 @@ def setup_parser():
                         help="""Weights that multiply the content loss
                         terms.""",
                         nargs='*',
-                        default=[3.e-7],
+                        default=[1.0],
                         type=float)
     parser.add_argument('--style_weights',
                         help="""Weights that multiply the style loss terms.""",
                         nargs='*',
-                        default=[1.e2, 1.e2, 1.e2, 1.e2],
+                        default=[5.0, 5.0, 5.0, 5.0],
                         type=float)
     parser.add_argument('--num_steps_ckpt',
                         help="""Save a checkpoint everytime this number of
@@ -85,7 +85,7 @@ def setup_parser():
                         type=int)
     parser.add_argument('--beta',
                         help="""TV regularization weight.""",
-                        default=1.e-11,
+                        default=1.e-4,
                         type=float)
     parser.add_argument('--style_target_resize',
                         help="""Scale factor to apply to the style target image.
@@ -138,13 +138,15 @@ def create_style_loss(grams, target_grams, style_weights):
     assert(len(grams) == len(target_grams))
     num_style_layers = len(target_grams)
 
-    # Style loss (Note normalization is included in gram matrices already)
+    # Style loss
     style_losses = []
     for i in xrange(num_style_layers):
         gram, target_gram = grams[i], target_grams[i]
         style_weight = style_weights[i]
+        _, c1, c2 = gram.get_shape().as_list()
+        size = c1*c2
         loss = tf.reduce_sum(tf.square(gram - tf.constant(target_gram)))
-        loss = style_weight * loss
+        loss = style_weight * loss / size
         style_losses.append(loss)
     style_loss = tf.add_n(style_losses, name='style_loss')
     return style_loss
@@ -198,7 +200,7 @@ def get_style_layers(layer_names):
         features_matrix = tf.reshape(layer, tf.pack([shape[0], -1, shape[3]]))
         gram_matrix = tf.batch_matmul(features_matrix, features_matrix,
                                       adj_x=True)
-        gram_matrix = gram_matrix / tf.cast(num_elements**2, tf.float32)
+        gram_matrix = gram_matrix / tf.cast(num_elements, tf.float32)
         grams.append(gram_matrix)
     return grams
 
