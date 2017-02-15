@@ -8,8 +8,11 @@ Date: Jan 2017
 import numpy as np
 import tensorflow as tf
 
+# TODO: For resize-convolution, what if we use strides of 1 for the
+# convolution instead of upsampling past the desired dimensions? Test this.
 
-def create_net(image_shape):
+
+def create_net(shape, upsample_method='deconv'):
     """Creates the transformation network, given dimensions acquired from an
     input image. Does this according to J.C. Johnson's specifications
     after utilizing instance normalization (i.e. halving dimensions given
@@ -17,8 +20,13 @@ def create_net(image_shape):
 
     :param image
         Input image in numpy array form with NxHxWxC dimensions.
+    :param upsample_method
+        values: 'deconv', 'resize'
+        Whether to upsample via deconvolution, or the proposed fix of resizing
+        + convolution. Description of 2nd method is available at:
+            http://distill.pub/2016/deconv_checkerboard/
     """
-    shape = image_shape
+    assert(upsample_method in ['deconv', 'resize'])
 
     # Input
     X = tf.placeholder(tf.float32, shape=shape, name="input")
@@ -46,13 +54,21 @@ def create_net(image_shape):
     with tf.variable_scope('resblock_4'):
         h = res_layer(h, 64, 3, [1, 1, 1, 1])
 
-    # Deconvolutional layers (tanh on last to get 0,255 range)
-    with tf.variable_scope('deconv_0'):
-        h = relu(inst_norm(deconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
-    with tf.variable_scope('deconv_1'):
-        h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
-    with tf.variable_scope('deconv_2'):
-        h =scaled_tanh(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
+    # Upsampling layers (tanh on last to get 0,255 range)
+    if upsample_method is 'deconv':
+        with tf.variable_scope('upsample_0'):
+            h = relu(inst_norm(deconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
+        with tf.variable_scope('upsample_1'):
+            h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
+        with tf.variable_scope('upsample_2'):
+            h = scaled_tanh(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
+    elif upsample_method is 'resize':
+        with tf.variable_scope('upsample_0'):
+            h = relu(inst_norm(upconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
+        with tf.variable_scope('upsample_1'):
+            h = relu(inst_norm(upconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
+        with tf.variable_scope('upsample_2'):  # Not actually an upsample.
+            h = scaled_tanh(inst_norm(conv2d(h, 16, 3, 9, [1, 1, 1, 1])))
 
     # Create a redundant layer with name 'output'
     h = tf.identity(h, name='output')
@@ -101,6 +117,42 @@ def conv2d(X, n_ch_in, n_ch_out, kernel_size, strides, name=None,
                      filter=W,
                      strides=strides,
                      padding=padding)
+    return h
+
+
+def upconv2d(X, n_ch_in, n_ch_out, kernel_size, strides):
+    """Resizes then applies a convolution.
+
+    :param X
+        Input tensor
+    :param n_ch_in
+        Number of input channels
+    :param n_ch_out
+        Number of output channels
+    :param kernel_size
+        Size of square shaped convolutional kernel
+    :param strides
+        Stride information
+    """
+    shape = [kernel_size, kernel_size, n_ch_in, n_ch_out]
+
+    # We first upsample two strides-worths. The convolution will then bring it
+    # down one stride.
+    new_h = X.get_shape().as_list()[1]*strides[1]**2
+    new_w = X.get_shape().as_list()[2]*strides[2]**2
+    upsized = tf.image.resize_images(X, [new_h, new_w], method=1)
+
+    # Now convolve to get the channels to what we want.
+    shape = [kernel_size, kernel_size, n_ch_in, n_ch_out]
+    W = tf.get_variable(name='W',
+                        shape=shape,
+                        dtype=tf.float32,
+                        initializer=tf.random_normal_initializer())
+    h = tf.nn.conv2d(upsized,
+                     filter=W,
+                     strides=strides,
+                     padding="SAME")
+
     return h
 
 

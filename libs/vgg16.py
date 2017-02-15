@@ -262,7 +262,7 @@ class vgg16:
             if 'fc' in k:
                 break
             else:
-                print i, k, np.shape(weights[k])
+                # print i, k, np.shape(weights[k])
                 sess.run(self.parameters[i].assign(weights[k]))
 
 if __name__ == '__main__':

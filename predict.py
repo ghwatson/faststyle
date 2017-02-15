@@ -25,13 +25,18 @@ def setup_parser():
                                      transfer model to filter an input
                                      image, and save to an output image.""")
     parser.add_argument('--input_img_path',
-                        help='Input content image that will be stylized.',
-                        required=True)
+                        help='Input content image that will be stylized.')
     parser.add_argument('--output_img_path',
                         help='Desired output image path.',
                         default='./out.png')
     parser.add_argument('--model_path',
                         help='Path to .ckpt for the trained model.')
+    parser.add_argument('--upsample_method',
+                        help="""The upsample method that was used to construct
+                        the model being loaded. Note that if the wrong one is
+                        chosen an error will be thrown.""",
+                        choices=['resize','deconv'],
+                        default='resize')
     return parser
 
 
@@ -43,6 +48,7 @@ if __name__ == '__main__':
     input_img_path = args.input_img_path
     output_img_path = args.output_img_path
     model_path = args.model_path
+    upsample_method = args.upsample_method
 
     # Read + format input image.
     img = plt.imread(input_img_path)
@@ -51,8 +57,9 @@ if __name__ == '__main__':
     # Create the graph.
     shape = img_4d.shape
     with tf.variable_scope('img_t_net'):
-        out = create_net(shape)
+        out = create_net(shape, upsample_method)
 
+    # Saver used to restore the model to the session.
     saver = tf.train.Saver()
 
     # Filter the input image.

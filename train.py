@@ -17,6 +17,8 @@ import argparse
 from scipy.misc import imresize
 
 # TODO: Refactor into functions for readability
+# TODO: implement conditional default in argparse for beta. Depends on
+# upsampling method.
 
 
 def setup_parser():
@@ -84,13 +86,21 @@ def setup_parser():
                         default=-1,
                         type=int)
     parser.add_argument('--beta',
-                        help="""TV regularization weight.""",
-                        default=1.e-4,
+                        help="""TV regularization weight. If using deconv for
+                        --upsample_method, try 1.e-4 for starters. Otherwise,
+                        not needed.""",
+                        default=0.0,
                         type=float)
     parser.add_argument('--style_target_resize',
                         help="""Scale factor to apply to the style target image.
                         Can change the features that get pronounced.""",
                         default=1.0, type=float)
+    parser.add_argument('--upsample_method',
+                        help="""Either deconvolution as in the original paper,
+                        or the resize convolution method. The latter seems
+                        superior and does not require a beta value.""",
+                        choices=['deconv', 'resize'],
+                        default='resize')
     return parser
 
 
@@ -229,6 +239,7 @@ def main(args):
     num_steps_break = args.num_steps_break
     beta_val = args.beta
     style_target_resize = args.style_target_resize
+    upsample_method = args.upsample_method
 
     # Load in style image that will define the model.
     style_img = plt.imread(style_img_path)
@@ -254,7 +265,7 @@ def main(args):
     # Load in image transformation network into default graph.
     shape = [batch_size] + preprocess_size + [3]
     with tf.variable_scope('img_t_net'):
-        img_t_out = create_net(shape)
+        img_t_out = create_net(shape, upsample_method)
 
     # Connect vgg directly to the image transformation network.
     with tf.variable_scope('vgg'):
