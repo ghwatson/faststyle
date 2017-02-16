@@ -15,6 +15,8 @@ import datapipe
 import os
 import argparse
 from scipy.misc import imresize
+import losses
+from layer_utils import get_layers, get_grams
 
 # TODO: Refactor into functions for readability
 # TODO: implement conditional default in argparse for beta. Depends on
@@ -104,117 +106,6 @@ def setup_parser():
     return parser
 
 
-def create_content_loss(content_layers, target_content_layers,
-                        content_weights):
-    """Defines the content loss function.
-
-    :param content_layers
-        List of tensors for layers derived from training graph.
-    :param target_content_layers
-        List of placeholders to be filled with content layer data.
-    :param content_weights
-        List of floats to be used as weights for content layers.
-    """
-    assert(len(target_content_layers) == len(content_layers))
-    num_content_layers = len(target_content_layers)
-
-    # Content loss
-    content_losses = []
-    for i in xrange(num_content_layers):
-        content_layer = content_layers[i]
-        target_content_layer = target_content_layers[i]
-        content_weight = content_weights[i]
-        loss = tf.reduce_sum(tf.squared_difference(content_layer,
-                                                   target_content_layer))
-        loss = content_weight * loss
-        _, h, w, c = content_layer.get_shape().as_list()
-        num_elements = h * w * c
-        loss = loss / tf.cast(num_elements, tf.float32)
-        content_losses.append(loss)
-    content_loss = tf.add_n(content_losses, name='content_loss')
-    return content_loss
-
-
-def create_style_loss(grams, target_grams, style_weights):
-    """Defines the style loss function.
-
-    :param grams
-        List of tensors for Gram matrices derived from training graph.
-    :param target_grams
-        List of numpy arrays for Gram matrices precomputed from style image.
-    :param style_weights
-        List of floats to be used as weights for style layers.
-    """
-    assert(len(grams) == len(target_grams))
-    num_style_layers = len(target_grams)
-
-    # Style loss
-    style_losses = []
-    for i in xrange(num_style_layers):
-        gram, target_gram = grams[i], target_grams[i]
-        style_weight = style_weights[i]
-        _, c1, c2 = gram.get_shape().as_list()
-        size = c1*c2
-        loss = tf.reduce_sum(tf.square(gram - tf.constant(target_gram)))
-        loss = style_weight * loss / size
-        style_losses.append(loss)
-    style_loss = tf.add_n(style_losses, name='style_loss')
-    return style_loss
-
-
-def create_tv_loss(X):
-    """Creates 2d TV loss using X as the input tensor. Acts on different colour
-    channels individually, and uses convolution as a means of calculating the
-    differences.
-
-    :param X:
-        4D Tensor
-    """
-    # These filters for the convolution will take the differences across the
-    # spatial dimensions. Constructing these on paper has to be done carefully,
-    # but can be easily understood  when one realizes that the sub-3x3 arrays
-    # should have no mixing terms as the RGB channels should not interact
-    # within this convolution. Thus, the 2 3x3 subarrays are identity and
-    # -1*identity. The filters should look like:
-    # v_filter = [ [(3x3)], [(3x3)] ]
-    # h_filter = [ [(3x3), (3x3)] ]
-    ident = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-    v_array = np.array([[ident], [-1*ident]])
-    h_array = np.array([[ident, -1*ident]])
-    v_filter = tf.constant(v_array, tf.float32)
-    h_filter = tf.constant(h_array, tf.float32)
-
-    vdiff = tf.nn.conv2d(X, v_filter, strides=[1, 1, 1, 1], padding='VALID')
-    hdiff = tf.nn.conv2d(X, h_filter, strides=[1, 1, 1, 1], padding='VALID')
-
-    loss = tf.reduce_sum(tf.square(hdiff)) + tf.reduce_sum(tf.square(vdiff))
-
-    return loss
-
-
-def get_style_layers(layer_names):
-    """Get the style layer tensors from the VGG graph (presumed to be loaded into
-    default).
-
-    :param layer_names
-        Names of the layers in tf's default graph
-    """
-    g = tf.get_default_graph()
-    grams = []
-    style_layers_names = ['vgg/' + i + ':0' for i in layer_names]
-    style_layers = [g.get_tensor_by_name(name) for name
-                    in style_layers_names]
-    for i, layer in enumerate(style_layers):
-        shape = layer.get_shape().as_list()
-        num_elements = shape[1] * shape[2] * shape[3]
-        features_matrix = tf.reshape(layer, tf.pack([shape[0], -1, shape[3]]))
-        gram_matrix = tf.batch_matmul(features_matrix, features_matrix,
-                                      adj_x=True)
-        gram_matrix = gram_matrix / tf.cast(num_elements, tf.float32)
-        grams.append(gram_matrix)
-    return grams
-
-
 def main(args):
     """main
 
@@ -255,7 +146,7 @@ def main(args):
     with tf.Session() as sess:
         vggnet.load_weights('libs/vgg16_weights.npz', sess)
         print 'Precomputing target style layers.'
-        target_grams = sess.run(get_style_layers(loss_style_layers),
+        target_grams = sess.run(get_grams(loss_style_layers),
                                 feed_dict={'vgg/input:0': style_img})
 
     # Clean up so we can re-create vgg connected to our image network.
@@ -277,23 +168,21 @@ def main(args):
     Y = g.get_tensor_by_name('img_t_net/output:0')
 
     # Get the gram matrices' tensors for the style loss features.
-    input_img_grams = get_style_layers(loss_style_layers)
+    input_img_grams = get_grams(loss_style_layers)
 
     # Get the tensors for content loss features.
-    content_layers_names = ['vgg/' + i + ':0' for i in loss_content_layers]
-    content_layers = [g.get_tensor_by_name(name) for name
-                      in content_layers_names]
+    content_layers = get_layers(loss_content_layers)
 
     # Create loss function
     content_targets = tuple(tf.placeholder(tf.float32,
                             shape=[None, None, None, None],
                             name='content_input_{}'.format(i))
                             for i, _ in enumerate(loss_content_layers))
-    cont_loss = create_content_loss(content_layers, content_targets,
+    cont_loss = losses.content_loss(content_layers, content_targets,
                                     content_weights)
-    style_loss = create_style_loss(input_img_grams, target_grams,
+    style_loss = losses.style_loss(input_img_grams, target_grams,
                                    style_weights)
-    tv_loss = create_tv_loss(Y)
+    tv_loss = losses.tv_loss(Y)
     beta = tf.placeholder(tf.float32, shape=[], name='tv_scale')
     loss = cont_loss + style_loss + beta * tv_loss
     with tf.name_scope('summaries'):

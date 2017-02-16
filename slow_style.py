@@ -10,11 +10,12 @@ Date: February 2017
 import tensorflow as tf
 from libs import vgg16
 import argparse
-import train
+import losses
 import numpy as np
 from scipy.misc import imresize
 from matplotlib import pyplot as plt
 import cv2
+from layer_utils import get_layers, get_grams
 
 # TODO: segment off the training functions that we import.
 
@@ -101,7 +102,7 @@ def main(args):
     with tf.Session() as sess:
         vggnet.load_weights('libs/vgg16_weights.npz', sess)
         print 'Precomputing target style layers.'
-        target_grams = sess.run(train.get_style_layers(loss_style_layers),
+        target_grams = sess.run(get_grams(loss_style_layers),
                                 feed_dict={'vgg/input:0': style_img})
 
     # Clean up so we can re-create vgg at size of input content image for
@@ -115,7 +116,7 @@ def main(args):
         cont_img = imresize(cont_img, cont_target_resize, 'bicubic')
     cont_img = cont_img[np.newaxis, :].astype(np.float32)
 
-    # Setup VGG.
+    # Setup VGG and initialize it with white noise image that we'll optimize.
     shape = cont_img.shape
     with tf.variable_scope('to_train'):
         white_noise = np.random.rand(shape[0], shape[1],
@@ -127,13 +128,10 @@ def main(args):
         vggnet = vgg16.vgg16(X)
 
     # Get the gram matrices' tensors for the style loss features.
-    input_img_grams = train.get_style_layers(loss_style_layers)
+    input_img_grams = get_grams(loss_style_layers)
 
     # Get the tensors for content loss features.
-    content_layers_names = ['vgg/' + i + ':0' for i in loss_content_layers]
-    g = tf.get_default_graph()
-    content_layers = [g.get_tensor_by_name(name) for name
-                      in content_layers_names]
+    content_layers = get_layers(loss_content_layers)
 
     # Get the target content features
     with tf.Session() as sess:
@@ -143,11 +141,11 @@ def main(args):
                                    feed_dict={'to_train/input:0': cont_img})
 
     # Create loss function
-    cont_loss = train.create_content_loss(content_layers, content_targets,
-                                          content_weights)
-    style_loss = train.create_style_loss(input_img_grams, target_grams,
-                                         style_weights)
-    tv_loss = train.create_tv_loss(X)
+    cont_loss = losses.content_loss(content_layers, content_targets,
+                                    content_weights)
+    style_loss = losses.style_loss(input_img_grams, target_grams,
+                                   style_weights)
+    tv_loss = losses.tv_loss(X)
     loss = cont_loss + style_loss + beta * tv_loss
 
     # We do not want to train VGG, so we must grab the subset.
