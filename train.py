@@ -18,7 +18,6 @@ from scipy.misc import imresize
 import losses
 from layer_utils import get_layers, get_grams
 
-# TODO: Refactor into functions for readability
 # TODO: implement conditional default in argparse for beta. Depends on
 # upsampling method.
 
@@ -156,16 +155,12 @@ def main(args):
     # Load in image transformation network into default graph.
     shape = [batch_size] + preprocess_size + [3]
     with tf.variable_scope('img_t_net'):
-        img_t_out = create_net(shape, upsample_method)
+        X = tf.placeholder(tf.float32, shape=shape, name='input')
+        Y = create_net(X, upsample_method)
 
     # Connect vgg directly to the image transformation network.
     with tf.variable_scope('vgg'):
-        vggnet = vgg16.vgg16(img_t_out)
-
-    # Get the input/output
-    g = tf.get_default_graph()
-    X = g.get_tensor_by_name('img_t_net/input:0')
-    Y = g.get_tensor_by_name('img_t_net/output:0')
+        vggnet = vgg16.vgg16(Y)
 
     # Get the gram matrices' tensors for the style loss features.
     input_img_grams = get_grams(loss_style_layers)

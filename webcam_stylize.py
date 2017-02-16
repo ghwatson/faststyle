@@ -61,15 +61,11 @@ if __name__ == '__main__':
     # Create the graph.
     shape = [1, y_new, x_new, 3]
     with tf.variable_scope('img_t_net'):
-        out = create_net(shape, upsample_method)
+        X = tf.placeholder(tf.float32, shape=shape, name='input')
+        Y = create_net(X, upsample_method)
 
     # Saver used to restore the model to the session.
     saver = tf.train.Saver()
-
-    # I/O for filter.
-    g = tf.get_default_graph()
-    X = g.get_tensor_by_name('img_t_net/input:0')
-    Y = g.get_tensor_by_name('img_t_net/output:0')
 
     # Instantiate a Writer to save the video.
     fourcc = cv2.VideoWriter_fourcc(*'XVID')

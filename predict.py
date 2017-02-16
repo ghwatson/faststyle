@@ -1,4 +1,4 @@
-""" 
+"""
 Used to load and apply a trained faststyle model to an image in order to
 stylize it.
 
@@ -35,7 +35,7 @@ def setup_parser():
                         help="""The upsample method that was used to construct
                         the model being loaded. Note that if the wrong one is
                         chosen an error will be thrown.""",
-                        choices=['resize','deconv'],
+                        choices=['resize', 'deconv'],
                         default='resize')
     return parser
 
@@ -55,17 +55,14 @@ if __name__ == '__main__':
     img_4d = img[np.newaxis, :]
 
     # Create the graph.
-    shape = img_4d.shape
     with tf.variable_scope('img_t_net'):
-        out = create_net(shape, upsample_method)
+        X = tf.placeholder(tf.float32, shape=img_4d.shape, name='input')
+        Y = create_net(X, upsample_method)
 
     # Saver used to restore the model to the session.
     saver = tf.train.Saver()
 
     # Filter the input image.
-    g = tf.get_default_graph()
-    X = g.get_tensor_by_name('img_t_net/input:0')
-    Y = g.get_tensor_by_name('img_t_net/output:0')
     with tf.Session() as sess:
         print 'Loading up model...'
         saver.restore(sess, model_path)

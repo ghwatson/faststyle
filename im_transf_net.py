@@ -1,5 +1,5 @@
 """
-Functions used for the creation of the transformation network.
+Functions used for the creation of the image transformation network.
 
 File author: Grant Watson
 Date: Jan 2017
@@ -12,7 +12,7 @@ import tensorflow as tf
 # convolution instead of upsampling past the desired dimensions? Test this.
 
 
-def create_net(shape, upsample_method='deconv'):
+def create_net(X, upsample_method='deconv'):
     """Creates the transformation network, given dimensions acquired from an
     input image. Does this according to J.C. Johnson's specifications
     after utilizing instance normalization (i.e. halving dimensions given
@@ -29,7 +29,7 @@ def create_net(shape, upsample_method='deconv'):
     assert(upsample_method in ['deconv', 'resize'])
 
     # Input
-    X = tf.placeholder(tf.float32, shape=shape, name="input")
+    # X = tf.placeholder(tf.float32, shape=shape, name="input")
 
     # Padding
     h = reflect_pad(X, 40)
@@ -274,25 +274,3 @@ def res_layer(X, n_ch, kernel_size, strides):
     h = tf.add(h, X_crop, name='res_out')
 
     return h
-
-
-if __name__ == "__main__":
-    # Create the transformation network with some bogus image.
-    img = np.zeros((256, 256, 3))
-    img *= 0.0
-    img[0:128, :, 0] = 1.0
-    img = img[np.newaxis, :]
-    img2 = np.zeros((256, 256, 3))
-    img2[0:128, :, 0] = 0.5
-    img2 = img2[np.newaxis, :]
-    img = np.append(img, img2, axis=0)
-
-    # Initialize net and feed forward.
-    h = create_net(img.shape)
-    g = tf.get_default_graph()
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        X = g.get_tensor_by_name('input:0')
-        scale = g.get_tensor_by_name('initconv_0/INscale:0')
-        out = sess.run(h, feed_dict={X: img})
-    print out
