@@ -36,9 +36,9 @@ def get_grams(layer_names):
     for i, layer in enumerate(style_layers):
         b, h, w, c = layer.get_shape().as_list()
         num_elements = h*w*c
-        features_matrix = tf.reshape(layer, tf.pack([b, -1, c]))
-        gram_matrix = tf.batch_matmul(features_matrix, features_matrix,
-                                      adj_x=True)
+        features_matrix = tf.reshape(layer, tf.stack([b, -1, c]))
+        gram_matrix = tf.matmul(features_matrix, features_matrix,
+                                transpose_a=True)
         gram_matrix = gram_matrix / tf.cast(num_elements, tf.float32)
         grams.append(gram_matrix)
     return grams

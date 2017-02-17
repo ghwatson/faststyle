@@ -208,9 +208,10 @@ def scaled_tanh(X):
     scale = tf.constant(255.0)
     shift = tf.constant(255.0)
     half = tf.constant(2.0)
-    out = tf.mul(tf.tanh(X), scale)  # range of [-255, 255]
-    out = tf.add(out, shift)  # range of [0, 2*255]
-    out = tf.div(out, half)  # range of [0, 255]
+    # out = tf.mul(tf.tanh(X), scale)  # range of [-255, 255]
+    out = (scale*tf.tanh(X) + shift) / half
+    # out = tf.add(out, shift)  # range of [0, 2*255]
+    # out = tf.div(out, half)  # range of [0, 255]
     return out
 
 
