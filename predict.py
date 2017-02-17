@@ -16,6 +16,7 @@ import numpy as np
 from im_transf_net import create_net
 import cv2
 from matplotlib import pyplot as plt
+from scipy.misc import imresize
 import argparse
 
 
@@ -31,6 +32,11 @@ def setup_parser():
                         default='./out.png')
     parser.add_argument('--model_path',
                         help='Path to .ckpt for the trained model.')
+    parser.add_argument('--content_target_resize',
+                        help="""Resize input content image. Useful if having
+                        OOM issues""",
+                        default=1.0,
+                        type=float)
     parser.add_argument('--upsample_method',
                         help="""The upsample method that was used to construct
                         the model being loaded. Note that if the wrong one is
@@ -49,9 +55,12 @@ if __name__ == '__main__':
     output_img_path = args.output_img_path
     model_path = args.model_path
     upsample_method = args.upsample_method
+    content_target_resize = args.content_target_resize
 
     # Read + format input image.
     img = plt.imread(input_img_path)
+    if content_target_resize != 1.0:
+        img = imresize(img, content_target_resize, 'bicubic')
     img_4d = img[np.newaxis, :]
 
     # Create the graph.

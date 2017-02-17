@@ -1,7 +1,8 @@
 """
 This file is used for construction of the data input pipeline. It takes care of
 batching and preprocessing, and can be used to repeatedly draw a fresh batch
-for use in training.
+for use in training. It utilizes TFRecords format, so data must be converted to
+his beforehand. tfrecords_writer.py handles this.
 
 File author: Grant Watson
 Date: Jan 2017
@@ -32,7 +33,7 @@ def read_my_file_format(filename_queue, resize_shape=None):
     :param filename_queue:
         tf.train.string_input_producer object
     :param resize_shape:
-        shape to resize images to
+        2 element list defining the shape to resize images to.
     """
     reader = tf.TFRecordReader()
     key, serialized_example = reader.read(filename_queue)
@@ -75,41 +76,3 @@ def batcher(filenames, batch_size, resize_shape=None, num_epochs=None,
         [example], batch_size=batch_size, capacity=capacity,
         min_after_dequeue=min_after_dequeue)
     return example_batch
-
-
-if __name__ == '__main__':
-    # Simple execution test (specific to my setup)
-    # TODO: replace with something more informative + generic.
-
-    train_dir = '/home/ghwatson/workspace/faststyle/mockshards/'
-    mscoco_shape = [256, 256]
-
-    files = tf.train.match_filenames_once(train_dir + 'train-*')
-
-    batch_op = batcher(files, 4, mscoco_shape, 2)
-    init_op = tf.group(tf.global_variables_initializer(),
-                       tf.local_variables_initializer())
-
-    yo = 1
-    with tf.Session() as sess:
-
-        # Initialize the pipeline
-        sess.run(init_op)
-
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(coord=coord)
-
-        try:
-            while not coord.should_stop():
-                out = sess.run(batch_op)
-                yo += 1
-                print yo
-        except tf.errors.OutOfRangeError:
-            print('Done training.')
-        finally:
-            coord.request_stop()
-
-        coord.join(threads)
-
-        print out.shape
-        print out[1, :, :, 0]

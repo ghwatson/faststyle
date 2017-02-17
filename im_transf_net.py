@@ -5,7 +5,6 @@ File author: Grant Watson
 Date: Jan 2017
 """
 
-import numpy as np
 import tensorflow as tf
 
 # TODO: For resize-convolution, what if we use strides of 1 for the
@@ -18,8 +17,8 @@ def create_net(X, upsample_method='deconv'):
     after utilizing instance normalization (i.e. halving dimensions given
     in the paper).
 
-    :param image
-        Input image in numpy array form with NxHxWxC dimensions.
+    :param X
+        tf.Tensor with NxHxWxC dimensions.
     :param upsample_method
         values: 'deconv', 'resize'
         Whether to upsample via deconvolution, or the proposed fix of resizing

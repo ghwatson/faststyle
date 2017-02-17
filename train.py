@@ -202,6 +202,8 @@ def main(args):
                                                             train_vars)
 
     # Setup subdirectory for this run's Tensoboard logs.
+    if not os.path.exists('./summaries/train/'):
+        os.makedirs('./summaries/train/')
     if run_name is None:
         current_dirs = [name for name in os.listdir('./summaries/train/')
                         if os.path.isdir('./summaries/train/' + name)]
@@ -213,6 +215,10 @@ def main(args):
         run_name = name
 
     # Savers and summary writers
+    if not os.path.exists('./training'):  # Dir that we'll later save .ckpts to
+        os.makedirs('./training')
+    if not os.path.exists('./models'):  # Dir that save final models to
+        os.makedirs('./models')
     saver = tf.train.Saver()
     final_saver = tf.train.Saver(train_vars)
     merged = tf.summary.merge_all()
