@@ -15,7 +15,6 @@ import tensorflow as tf
 import numpy as np
 from im_transf_net import create_net
 import cv2
-from matplotlib import pyplot as plt
 from scipy.misc import imresize
 import argparse
 
@@ -58,7 +57,7 @@ if __name__ == '__main__':
     content_target_resize = args.content_target_resize
 
     # Read + format input image.
-    img = plt.imread(input_img_path)
+    img = cv2.imread(input_img_path)
     if content_target_resize != 1.0:
         img = imresize(img, content_target_resize, 'bicubic')
     img_4d = img[np.newaxis, :]
