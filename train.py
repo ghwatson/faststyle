@@ -170,9 +170,9 @@ def main(args):
 
     # Create loss function
     content_targets = tuple(tf.placeholder(tf.float32,
-                            shape=[None, None, None, None],
+                            shape=layer.get_shape(),
                             name='content_input_{}'.format(i))
-                            for i, _ in enumerate(loss_content_layers))
+                            for i, layer in enumerate(content_layers))
     cont_loss = losses.content_loss(content_layers, content_targets,
                                     content_weights)
     style_loss = losses.style_loss(input_img_grams, target_grams,
