@@ -15,7 +15,6 @@ import os
 import argparse
 import utils
 import losses
-from layer_utils import get_layers, get_grams
 
 # TODO: implement conditional default in argparse for beta. Depends on
 # upsampling method.
@@ -135,6 +134,10 @@ def main(args):
     style_img = utils.imresize(style_img, style_target_resize)
     style_img = style_img[np.newaxis, :].astype(np.float32)
 
+    # Alter the names to include a namescope that we'll use + output suffix.
+    loss_style_layers = ['vgg/' + i + ':0' for i in loss_style_layers]
+    loss_content_layers = ['vgg/' + i + ':0' for i in loss_content_layers]
+
     # Get target Gram matrices from the style image.
     with tf.variable_scope('vgg'):
         X_vgg = tf.placeholder(tf.float32, shape=style_img.shape, name='input')
@@ -142,7 +145,7 @@ def main(args):
     with tf.Session() as sess:
         vggnet.load_weights('libs/vgg16_weights.npz', sess)
         print 'Precomputing target style layers.'
-        target_grams = sess.run(get_grams(loss_style_layers),
+        target_grams = sess.run(utils.get_grams(loss_style_layers),
                                 feed_dict={X_vgg: style_img})
 
     # Clean up so we can re-create vgg connected to our image network.
@@ -160,10 +163,10 @@ def main(args):
         vggnet = vgg16.vgg16(Y)
 
     # Get the gram matrices' tensors for the style loss features.
-    input_img_grams = get_grams(loss_style_layers)
+    input_img_grams = utils.get_grams(loss_style_layers)
 
     # Get the tensors for content loss features.
-    content_layers = get_layers(loss_content_layers)
+    content_layers = utils.get_layers(loss_content_layers)
 
     # Create loss function
     content_targets = tuple(tf.placeholder(tf.float32,

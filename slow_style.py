@@ -12,7 +12,6 @@ from libs import vgg16
 import argparse
 import losses
 import numpy as np
-# from layer_utils import get_layers, get_grams
 import utils
 
 
@@ -88,6 +87,10 @@ def main(args):
     style_img = utils.imread(style_img_path)
     style_img = utils.imresize(style_img, style_target_resize)
     style_img = style_img[np.newaxis, :].astype(np.float32)
+
+    # Alter the names to include a namescope that we'll use + output suffix.
+    loss_style_layers = ['vgg/' + i + ':0' for i in loss_style_layers]
+    loss_content_layers = ['vgg/' + i + ':0' for i in loss_content_layers]
 
     # Get target Gram matrices from the style image.
     with tf.variable_scope('vgg'):

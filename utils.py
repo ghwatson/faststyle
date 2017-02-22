@@ -55,16 +55,13 @@ def imwrite(path, img):
 
 
 def get_layers(layer_names):
-    """Get the tensors corresponding to the layer names from VGG in the default
-    graph.
+    """Get tensors from default graph by name.
 
     :param layer_names:
-        list of strings corresponding to vgg layer names (ex: [conv1_1,
-        conv2_1])
+        list of strings corresponding to names of tensors we want to extract.
     """
     g = tf.get_default_graph()
-    layers_names = ['vgg/' + i + ':0' for i in layer_names]
-    layers = [g.get_tensor_by_name(name) for name in layers_names]
+    layers = [g.get_tensor_by_name(name) for name in layer_names]
     return layers
 
 

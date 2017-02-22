@@ -1,8 +1,8 @@
 """
-Davi Frossard's Tensorflow implementation of VGG. I made a minor modification
-to remove the image size dependent fc layers at the end since we want to be
-able to easily alter image size (also they are of no use since we're just
-borrowing VGG's representation and not its output).
+Modified version of Davi Frossard's Tensorflow implementation of VGG. Original
+header is below.  Modifications include:
+    -commenting out fc layer stuff since this is not needed for style transfer.
+    -commenting out main demo at bottom + dependencies.
 
 -----Original header
 
@@ -19,8 +19,8 @@ borrowing VGG's representation and not its output).
 
 import tensorflow as tf
 import numpy as np
-from scipy.misc import imread, imresize
-from imagenet_classes import class_names
+# from scipy.misc import imread, imresize
+# from imagenet_classes import class_names
 
 
 class vgg16:
@@ -219,40 +219,40 @@ class vgg16:
                                padding='SAME',
                                name='pool4')
 
-    def fc_layers(self):
-        # fc1
-        with tf.name_scope('fc1') as scope:
-            shape = int(np.prod(self.pool5.get_shape()[1:]))
-            fc1w = tf.Variable(tf.truncated_normal([shape, 4096],
-                                                         dtype=tf.float32,
-                                                         stddev=1e-1), name='weights')
-            fc1b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
-                                 trainable=True, name='biases')
-            pool5_flat = tf.reshape(self.pool5, [-1, shape])
-            fc1l = tf.nn.bias_add(tf.matmul(pool5_flat, fc1w), fc1b)
-            self.fc1 = tf.nn.relu(fc1l)
-            self.parameters += [fc1w, fc1b]
+    # def fc_layers(self):
+        # # fc1
+        # with tf.name_scope('fc1') as scope:
+            # shape = int(np.prod(self.pool5.get_shape()[1:]))
+            # fc1w = tf.Variable(tf.truncated_normal([shape, 4096],
+                                                         # dtype=tf.float32,
+                                                         # stddev=1e-1), name='weights')
+            # fc1b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
+                                 # trainable=True, name='biases')
+            # pool5_flat = tf.reshape(self.pool5, [-1, shape])
+            # fc1l = tf.nn.bias_add(tf.matmul(pool5_flat, fc1w), fc1b)
+            # self.fc1 = tf.nn.relu(fc1l)
+            # self.parameters += [fc1w, fc1b]
 
-        # fc2
-        with tf.name_scope('fc2') as scope:
-            fc2w = tf.Variable(tf.truncated_normal([4096, 4096],
-                                                         dtype=tf.float32,
-                                                         stddev=1e-1), name='weights')
-            fc2b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
-                                 trainable=True, name='biases')
-            fc2l = tf.nn.bias_add(tf.matmul(self.fc1, fc2w), fc2b)
-            self.fc2 = tf.nn.relu(fc2l)
-            self.parameters += [fc2w, fc2b]
+        # # fc2
+        # with tf.name_scope('fc2') as scope:
+            # fc2w = tf.Variable(tf.truncated_normal([4096, 4096],
+                                                         # dtype=tf.float32,
+                                                         # stddev=1e-1), name='weights')
+            # fc2b = tf.Variable(tf.constant(1.0, shape=[4096], dtype=tf.float32),
+                                 # trainable=True, name='biases')
+            # fc2l = tf.nn.bias_add(tf.matmul(self.fc1, fc2w), fc2b)
+            # self.fc2 = tf.nn.relu(fc2l)
+            # self.parameters += [fc2w, fc2b]
 
-        # fc3
-        with tf.name_scope('fc3') as scope:
-            fc3w = tf.Variable(tf.truncated_normal([4096, 1000],
-                                                         dtype=tf.float32,
-                                                         stddev=1e-1), name='weights')
-            fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),
-                                 trainable=True, name='biases')
-            self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)
-            self.parameters += [fc3w, fc3b]
+        # # fc3
+        # with tf.name_scope('fc3') as scope:
+            # fc3w = tf.Variable(tf.truncated_normal([4096, 1000],
+                                                         # dtype=tf.float32,
+                                                         # stddev=1e-1), name='weights')
+            # fc3b = tf.Variable(tf.constant(1.0, shape=[1000], dtype=tf.float32),
+                                 # trainable=True, name='biases')
+            # self.fc3l = tf.nn.bias_add(tf.matmul(self.fc2, fc3w), fc3b)
+            # self.parameters += [fc3w, fc3b]
 
     def load_weights(self, weight_file, sess):
         weights = np.load(weight_file)
@@ -265,15 +265,15 @@ class vgg16:
                 # print i, k, np.shape(weights[k])
                 sess.run(self.parameters[i].assign(weights[k]))
 
-if __name__ == '__main__':
-    sess = tf.Session()
-    imgs = tf.placeholder(tf.float32, [None, 224, 224, 3])
-    vgg = vgg16(imgs, 'vgg16_weights.npz', sess)
+# if __name__ == '__main__':
+    # sess = tf.Session()
+    # imgs = tf.placeholder(tf.float32, [None, 224, 224, 3])
+    # vgg = vgg16(imgs, 'vgg16_weights.npz', sess)
 
-    img1 = imread('laska.png', mode='RGB')
-    img1 = imresize(img1, (224, 224))
+    # img1 = imread('laska.png', mode='RGB')
+    # img1 = imresize(img1, (224, 224))
 
-    prob = sess.run(vgg.probs, feed_dict={vgg.imgs: [img1]})[0]
-    preds = (np.argsort(prob)[::-1])[0:5]
-    for p in preds:
-        print class_names[p], prob[p]
+    # prob = sess.run(vgg.probs, feed_dict={vgg.imgs: [img1]})[0]
+    # preds = (np.argsort(prob)[::-1])[0:5]
+    # for p in preds:
+        # print class_names[p], prob[p]
