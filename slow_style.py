@@ -12,12 +12,8 @@ from libs import vgg16
 import argparse
 import losses
 import numpy as np
-from scipy.misc import imresize
-from matplotlib import pyplot as plt
-import cv2
-from layer_utils import get_layers, get_grams
-
-# TODO: segment off the training functions that we import.
+# from layer_utils import get_layers, get_grams
+import utils
 
 
 def setup_parser():
@@ -89,9 +85,8 @@ def main(args):
     output_img_path = args.output_img_path
 
     # Load in style image that will define the model.
-    style_img = plt.imread(style_img_path)
-    if style_target_resize != 1.0:
-        style_img = imresize(style_img, style_target_resize, 'bicubic')
+    style_img = utils.imread(style_img_path)
+    style_img = utils.imresize(style_img, style_target_resize)
     style_img = style_img[np.newaxis, :].astype(np.float32)
 
     # Get target Gram matrices from the style image.
@@ -102,7 +97,7 @@ def main(args):
     with tf.Session() as sess:
         vggnet.load_weights('libs/vgg16_weights.npz', sess)
         print 'Precomputing target style layers.'
-        target_grams = sess.run(get_grams(loss_style_layers),
+        target_grams = sess.run(utils.get_grams(loss_style_layers),
                                 feed_dict={'vgg/input:0': style_img})
 
     # Clean up so we can re-create vgg at size of input content image for
@@ -111,9 +106,8 @@ def main(args):
     tf.reset_default_graph()
 
     # Read in + resize the content image.
-    cont_img = plt.imread(cont_img_path)
-    if cont_target_resize != 1.0:
-        cont_img = imresize(cont_img, cont_target_resize, 'bicubic')
+    cont_img = utils.imread(cont_img_path)
+    cont_img = utils.imresize(cont_img, cont_target_resize)
     cont_img = cont_img[np.newaxis, :].astype(np.float32)
 
     # Setup VGG and initialize it with white noise image that we'll optimize.
@@ -128,10 +122,10 @@ def main(args):
         vggnet = vgg16.vgg16(X)
 
     # Get the gram matrices' tensors for the style loss features.
-    input_img_grams = get_grams(loss_style_layers)
+    input_img_grams = utils.get_grams(loss_style_layers)
 
     # Get the tensors for content loss features.
-    content_layers = get_layers(loss_content_layers)
+    content_layers = utils.get_layers(loss_content_layers)
 
     # Get the target content features
     with tf.Session() as sess:
@@ -184,10 +178,7 @@ def main(args):
 
     # Save it.
     img_out = np.squeeze(img_out)
-    img_out = np.stack([img_out[:, :, 2],
-                        img_out[:, :, 1],
-                        img_out[:, :, 0]], 2)
-    cv2.imwrite(output_img_path, img_out)
+    utils.imwrite(output_img_path, img_out)
 
 
 if __name__ == "__main__":

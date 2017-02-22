@@ -9,14 +9,11 @@ File author: Grant Watson
 Date: Jan 2017
 """
 
-# TODO: reduce the package dependency by just relying on one library.
-
 import tensorflow as tf
 import numpy as np
 from im_transf_net import create_net
-import cv2
-from scipy.misc import imresize
 import argparse
+import utils
 
 
 def setup_parser():
@@ -56,10 +53,9 @@ if __name__ == '__main__':
     upsample_method = args.upsample_method
     content_target_resize = args.content_target_resize
 
-    # Read + format input image.
-    img = cv2.imread(input_img_path)
-    if content_target_resize != 1.0:
-        img = imresize(img, content_target_resize, 'bicubic')
+    # Read + preprocess input image.
+    img = utils.imread(input_img_path)
+    img = utils.imresize(img, content_target_resize)
     img_4d = img[np.newaxis, :]
 
     # Create the graph.
@@ -77,12 +73,9 @@ if __name__ == '__main__':
         print 'Evaluating...'
         img_out = sess.run(Y, feed_dict={X: img_4d})
 
-    # Save the output image.
+    # Postprocess + save the output image.
     print 'Saving image.'
     img_out = np.squeeze(img_out)
-    img_out = np.stack([img_out[:, :, 2],
-                        img_out[:, :, 1],
-                        img_out[:, :, 0]], 2)
-    cv2.imwrite(output_img_path, img_out)
+    utils.imwrite(output_img_path, img_out)
 
     print 'Done.'

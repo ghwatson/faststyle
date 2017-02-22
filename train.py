@@ -10,11 +10,10 @@ import tensorflow as tf
 import numpy as np
 from libs import vgg16
 from im_transf_net import create_net
-from matplotlib import pyplot as plt
 import datapipe
 import os
 import argparse
-from scipy.misc import imresize
+import utils
 import losses
 from layer_utils import get_layers, get_grams
 
@@ -132,21 +131,19 @@ def main(args):
     upsample_method = args.upsample_method
 
     # Load in style image that will define the model.
-    style_img = plt.imread(style_img_path)
-    if style_target_resize != 1.0:
-        style_img = imresize(style_img, style_target_resize, 'bicubic')
+    style_img = utils.imread(style_img_path)
+    style_img = utils.imresize(style_img, style_target_resize)
     style_img = style_img[np.newaxis, :].astype(np.float32)
 
     # Get target Gram matrices from the style image.
     with tf.variable_scope('vgg'):
-        X_vgg = tf.placeholder(tf.float32, shape=style_img.shape,
-                               name='input')
+        X_vgg = tf.placeholder(tf.float32, shape=style_img.shape, name='input')
         vggnet = vgg16.vgg16(X_vgg)
     with tf.Session() as sess:
         vggnet.load_weights('libs/vgg16_weights.npz', sess)
         print 'Precomputing target style layers.'
         target_grams = sess.run(get_grams(loss_style_layers),
-                                feed_dict={'vgg/input:0': style_img})
+                                feed_dict={X_vgg: style_img})
 
     # Clean up so we can re-create vgg connected to our image network.
     print 'Resetting default graph.'
