@@ -1,9 +1,7 @@
 """
 Contains some functions that can be used with vgg to get tensors of layers and
-compute gram matrices. Assumes that Davi Frossard's vgg is loaded into default
-graph within 'vgg' namespace.
-
-Also contains some wrappers around OpenCV's image I/O functions.
+compute gram matrices.  Also contains some wrappers around OpenCV's image I/O
+functions.
 
 File author: Grant Watson
 Date: Feb 2017

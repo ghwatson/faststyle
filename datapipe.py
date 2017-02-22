@@ -2,7 +2,7 @@
 This file is used for construction of the data input pipeline. It takes care of
 batching and preprocessing, and can be used to repeatedly draw a fresh batch
 for use in training. It utilizes TFRecords format, so data must be converted to
-his beforehand. tfrecords_writer.py handles this.
+this beforehand. tfrecords_writer.py handles this.
 
 File author: Grant Watson
 Date: Jan 2017

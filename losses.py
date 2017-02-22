@@ -1,6 +1,5 @@
 """
-This file contains the different loss functions. They assume that VGG has
-been loaded into the default graph.
+This file contains the different loss functions.
 
 File author: Grant Watson
 Date: Feb 2017

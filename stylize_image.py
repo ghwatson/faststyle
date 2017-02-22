@@ -2,9 +2,6 @@
 Used to load and apply a trained faststyle model to an image in order to
 stylize it.
 
-Note: The name predict.py is a bit of a misnomer since were not really
-predicting anything. More inferring.
-
 File author: Grant Watson
 Date: Jan 2017
 """
