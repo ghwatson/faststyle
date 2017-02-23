@@ -25,14 +25,14 @@ def setup_parser():
     parser = argparse.ArgumentParser(
                 description='Train a style transfer net.')
     parser.add_argument('--train_dir',
-                        help='Directory of training data.')
+                        help='Directory of TFRecords training data.')
     parser.add_argument('--model_name',
                         help='Name of model being trained.')
     parser.add_argument('--style_img_path',
                         default='./style_images/starry_night_crop.jpg',
-                        help='Path to style template image.')
+                        help='Path to style target image.')
     parser.add_argument('--learn_rate',
-                        help='Learning rate for optimizer.',
+                        help='Learning rate for Adam optimizer.',
                         default=1e-3, type=float)
     parser.add_argument('--batch_size',
                         help='Batch size for training.',
@@ -41,12 +41,13 @@ def setup_parser():
                         help='Number of training epochs.',
                         default=2, type=int)
     parser.add_argument('--preprocess_size',
-                        help="""Dimensions to resize images to before passing
+                        help="""Dimensions to resize training images to before passing
                         them into the image transformation network.""",
                         default=[256, 256], nargs=2, type=int)
     parser.add_argument('--run_name',
                         help="""Name of log directory within the Tensoboard
-                        directory (./summaries).""",
+                        directory (./summaries). If not set, will use
+                        --model_name to create a unique directory.""",
                         default=None)
     parser.add_argument('--loss_content_layers',
                         help='Names of layers to define content loss.',
@@ -87,17 +88,18 @@ def setup_parser():
     parser.add_argument('--beta',
                         help="""TV regularization weight. If using deconv for
                         --upsample_method, try 1.e-4 for starters. Otherwise,
-                        not needed.""",
+                        this is not needed.""",
                         default=0.0,
                         type=float)
     parser.add_argument('--style_target_resize',
                         help="""Scale factor to apply to the style target image.
-                        Can change the features that get pronounced.""",
+                        Can change the dominant stylistic features.""",
                         default=1.0, type=float)
     parser.add_argument('--upsample_method',
                         help="""Either deconvolution as in the original paper,
                         or the resize convolution method. The latter seems
-                        superior and does not require a beta value.""",
+                        superior and does not require TV regularization through
+                        beta.""",
                         choices=['deconv', 'resize'],
                         default='resize')
     return parser

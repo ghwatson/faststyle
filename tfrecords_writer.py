@@ -19,6 +19,8 @@ Editor's Note: As mentioned above, I edited this. In particular, I made it to
 work with an unlabelled set of images. Original file here:
     https://github.com/tensorflow/models/blob/master/inception/inception/data/build-image-data.py
 
+--------------------
+
 Converts image data to TFRecords file format with Example protos.
 
 The image data set is expected to reside in JPEG files located in a single,

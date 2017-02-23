@@ -19,6 +19,7 @@ def setup_parser():
     parser = argparse.ArgumentParser(description="""Use a trained fast style
                                      transfer model to filter webcam feed.""")
     parser.add_argument('--model_path',
+                        default='./models/starry_final.ckpt',
                         help='Path to .ckpt for the trained model.')
     parser.add_argument('--upsample_method',
                         help="""The upsample method that was used to construct
@@ -28,7 +29,7 @@ def setup_parser():
                         default='resize')
     parser.add_argument('--resolution',
                         help="""Dimensions for webcam. Note that, depending on
-                        the webcam, certain resolutions will be possible.
+                        the webcam, only certain resolutions will be possible.
                         Leave this argument blank if want to use default
                         resolution.""",
                         nargs=2,
@@ -76,8 +77,6 @@ if __name__ == '__main__':
         print 'Loading up model...'
         saver.restore(sess, model_path)
         print 'Begin filtering...'
-        window = [0,0,0,0]
-        past_fps = [0, 0, 0, 0]
         while(True):
             # Capture frame-by-frame
             ret, frame = cap.read()

@@ -12,6 +12,9 @@ from im_transf_net import create_net
 import argparse
 import utils
 
+# TODO: handle the upsampling thing better. Really, shouldn't need to
+# explicitly have to give it.
+
 
 def setup_parser():
     """Options for command-line input."""
@@ -22,18 +25,19 @@ def setup_parser():
                         help='Input content image that will be stylized.')
     parser.add_argument('--output_img_path',
                         help='Desired output image path.',
-                        default='./out.png')
+                        default='./results/styled.jpg')
     parser.add_argument('--model_path',
+                        default='./models/starry_final.ckpt',
                         help='Path to .ckpt for the trained model.')
     parser.add_argument('--content_target_resize',
                         help="""Resize input content image. Useful if having
-                        OOM issues""",
+                        OOM issues.""",
                         default=1.0,
                         type=float)
     parser.add_argument('--upsample_method',
                         help="""The upsample method that was used to construct
                         the model being loaded. Note that if the wrong one is
-                        chosen an error will be thrown.""",
+                        chosen an error will occur.""",
                         choices=['resize', 'deconv'],
                         default='resize')
     return parser
