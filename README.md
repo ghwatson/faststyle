@@ -5,8 +5,20 @@ NOTE: This readme is incomplete.
 This repository is a Tensorflow implementation of JC Johnson et al.'s fast style transfer [paper](https://arxiv.org/abs/1603.08155), combined with D. Ulyanov's instance normalization
 [paper](https://arxiv.org/abs/1607.08022). It also provides resize-convolution on top of deconvolution for better upsampling as discussed [here](http://distill.pub/2016/deconv-checkerboard/).
 
-The pretrained models at ```faststyle/models``` were used to generate the results below:
-
+The pretrained models in ```faststyle/models``` were used to generate the results below:
+<div align='center'>
+  <img src='results/starry_chicago.jpg' width="425px">
+  <img src='results/candy_chicago.jpg' width="425px">
+</div>
+using neural networks trained with style images:
+<div align='center'>
+  <img src='style_images/starry_night_crop.jpg' height="320px">
+  <img src='style_images/candy.jpg' height="320px">
+</div>
+and then forward passing through these trained nets:
+<div align='center'>
+  <img src='results/chicago.jpg' height="320px">
+</div>
 
 ## Dependencies
 
