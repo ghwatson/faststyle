@@ -29,7 +29,7 @@ def setup_parser():
     parser.add_argument('--model_name',
                         help='Name of model being trained.')
     parser.add_argument('--style_img_path',
-                        default='./style_images/style_denoised_starry.jpg',
+                        default='./style_images/starry_night_crop.jpg',
                         help='Path to style template image.')
     parser.add_argument('--learn_rate',
                         help='Learning rate for optimizer.',
