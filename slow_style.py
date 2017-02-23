@@ -1,7 +1,6 @@
 """
-The Gatys et al original variant. Encoding this to test my loss functions and
-weights. Note that normally VGG19 is used, which produces better results. This
-instantiation uses VGG16.
+The Gatys et al original variant.  Note that normally VGG19 is used, which
+produces better results. This instantiation uses VGG16.
 
 Author: Grant Watson
 Date: February 2017
@@ -25,7 +24,7 @@ def setup_parser():
                         help='Path to content template image.')
     parser.add_argument('--learn_rate',
                         help='Learning rate for optimizer.',
-                        default=1e-3, type=float)
+                        default=1e1, type=float)
     parser.add_argument('--loss_content_layers',
                         help='Names of layers to define content loss.',
                         nargs='*',
@@ -47,7 +46,7 @@ def setup_parser():
                         type=float)
     parser.add_argument('--num_steps_break',
                         help='Max number of steps to iterate optimizer.',
-                        default=-1,
+                        default=500,
                         type=int)
     parser.add_argument('--beta',
                         help="""TV regularization weight.""",
