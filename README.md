@@ -1,5 +1,5 @@
 # faststyle
-This repository is a Tensorflow implementation of neural style transfer, a method by which the content of one image can be fused with the style of another image. It is based upon JC Johnson et al.s' fast style transfer [paper](https://arxiv.org/abs/1603.08155) combined with D. Ulyanov et al.s' instance normalization
+This repository is a Tensorflow implementation of fast neural style transfer, a method by which the content of one image can be fused with the style of another image. It is based upon JC Johnson et al.s' fast style transfer [paper](https://arxiv.org/abs/1603.08155) combined with D. Ulyanov et al.s' instance normalization
 [paper](https://arxiv.org/abs/1607.08022). It also provides resize-convolution on top of deconvolution for better upsampling as discussed [here](http://distill.pub/2016/deconv-checkerboard/).
 
 The pretrained models in ```faststyle/models``` were used to generate the results below:
@@ -32,14 +32,14 @@ If you just intend to utilize the pretrained models, then all you need to do is:
 ```
 git clone https://github.com/ghwatson/faststyle.git
 ```
-If you also intend on training new models, you will need the MS-Coco 13GB training dataset found [here](http://mscoco.org/dataset/#download) and the VGG weights by running:
+If you also intend to train new models, you will need the MS-Coco 13GB training dataset found [here](http://mscoco.org/dataset/#download) and the VGG weights by running:
 
 ```
 cd faststyle/libs
 ./get_vgg16_weights.sh
 ```
 
-To prepare the MS-Coco dataset for use with train.py, you will have to convert it to Tensorflow's TFRecords format, which shards the images into large files for more efficient reading from disk. ```faststyle/tfrecords_writer.py``` can be used for this as shown below. Change ```--num_threads``` to however many cores you want to use, and ensure that it divides whatever you choose for ```--train_shards```. This block will give shards ~100MB in size:
+To prepare the MS-Coco dataset for use with ```train.py```, you will have to convert it to Tensorflow's TFRecords format, which shards the images into large files for more efficient reading from disk. ```tfrecords_writer.py``` can be used for this as shown below. Change ```--num_threads``` to however many cores you want to use, and ensure that it divides whatever you choose for ```--train_shards```. This block will give shards ~100MB in size:
 
 ```
 python tfrecords_writer.py --train_directory /path/to/training/data \
@@ -86,7 +86,7 @@ Before being able to use this, ensure the appropriate steps were taken in the Se
 
 ### ```slow_style.py```
 
-Johnson et al.'s work sits upon Gatys et al.'s [A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576). ```slow_style.py``` implements a version of this (keep in mind the original uses VGG19). With the original algorithm, it takes much longer to stylize an image, but does not require the lengthy training process. It also often produces better looking results. ```slow_style.py``` is useful for prototyping various styles and hyperparameters before committing to a model with ```train.py```, though again keep in mind the results will not be the same. Example usage:
+Johnson et al.'s work sits upon Gatys et al.'s [A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576). ```slow_style.py``` implements a version of this (keep in mind the Gatys et al. version originally used VGG19). With the original algorithm, it takes much longer to stylize an image, but does not require the lengthy training process. It also often produces better looking results. ```slow_style.py``` is useful for prototyping various styles and hyperparameters before committing to a model with ```train.py```, though again keep in mind the results will not be the same. Example usage:
 ```
 python slow_style.py --style_img_path ./style_images/starry_night_crop \
                      --cont_img_path ./results/chicago.jpg \
@@ -104,3 +104,4 @@ python slow_style.py --style_img_path ./style_images/starry_night_crop \
 For the most part, I implemented this repo by using the aforementioned references, as well as Tensorflow's documentation (this was a learning exercise). Furthermore:
 - Justin Johnson's [repo](https://github.com/jcjohnson/fast-neural-style) for its documentation, and example images.
 - [hzy46/fast-neural-style-tensorflow](https://github.com/hzy46/fast-neural-style-tensorflow) to squash a few bugs.
+- Davi Frossard's [VGG16 Tensorflow implementation](https://www.cs.toronto.edu/~frossard/post/vgg16/).
