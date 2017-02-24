@@ -79,7 +79,7 @@ python train.py --train_dir path/to/mscoco/tfrecords \
                 --n_epochs 2 \
                 --batch_size 4 \
                 --content_weights 0.5 \
-                --style_weights 5.0 5.0 5.0 5.0
+                --style_weights 5.0 5.0 5.0 5.0 \
                 --style_target_resize 0.5
 ```
 Before being able to use this, ensure the appropriate steps were taken in the Setup section.
@@ -88,7 +88,7 @@ Before being able to use this, ensure the appropriate steps were taken in the Se
 
 Johnson et al.'s work sits upon Gatys et al.'s [A Neural Algorithm of Artistic Style](https://arxiv.org/abs/1508.06576). ```slow_style.py``` implements a version of this (keep in mind the Gatys et al. version originally used VGG19). With the original algorithm, it takes much longer to stylize an image, but does not require the lengthy training process. It also often produces better looking results. ```slow_style.py``` is useful for prototyping various styles and hyperparameters before committing to a model with ```train.py```, though again keep in mind the results will not be the same. Example usage:
 ```
-python slow_style.py --style_img_path ./style_images/starry_night_crop \
+python slow_style.py --style_img_path ./style_images/starry_night_crop.jpg \
                      --cont_img_path ./results/chicago.jpg \
                      --output_img_path ./slow_out.jpg \
                      --content_weights 1.0 \
