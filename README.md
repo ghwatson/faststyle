@@ -39,7 +39,7 @@ cd faststyle/libs
 ./get_vgg16_weights.sh
 ```
 
-To prepare the MS-Coco dataset for use with ```train.py```, you will have to convert it to Tensorflow's TFRecords format, which shards the images into large files for more efficient reading from disk. ```tfrecords_writer.py``` can be used for this as shown below. Change ```--num_threads``` to however many cores you want to use, and ensure that it divides whatever you choose for ```--train_shards```. This block will give shards ~100MB in size:
+To prepare the MS-Coco dataset for use with ```train.py```, you will have to convert it to Tensorflow's TFRecords format, which shards the images into large files for more efficient reading from disk. ```tfrecords_writer.py``` can be used for this as shown below. Change ```--num_threads``` to however many threads your cores can handle, and ensure that it divides whatever you choose for ```--train_shards```. This block will give shards ~100MB in size:
 
 ```
 python tfrecords_writer.py --train_directory /path/to/training/data \
