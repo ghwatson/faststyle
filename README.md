@@ -1,3 +1,6 @@
+NOTE: This branch is one in which I'm experimenting with a feature I'd like to
+add. Not necessarily usable until I've merged it into master branch.
+
 # faststyle
 This repository is a Tensorflow implementation of fast neural style transfer, a method by which the content of one image can be fused with the style of another image. It is based upon JC Johnson et al.s' fast style transfer [paper](https://arxiv.org/abs/1603.08155) combined with D. Ulyanov et al.s' instance normalization
 [paper](https://arxiv.org/abs/1607.08022). It also provides resize-convolution on top of deconvolution for better upsampling as discussed [here](http://distill.pub/2016/deconv-checkerboard/).

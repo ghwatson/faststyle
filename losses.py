@@ -7,6 +7,11 @@ Date: Feb 2017
 
 import tensorflow as tf
 import numpy as np
+import utils
+
+# TODO: Should we just keep guided gram matrix version in separate function?
+# TODO: move guidance channel construction somewhere that it can be mixed with
+# VGG receptive fields.
 
 
 def content_loss(content_layers, target_content_layers,
@@ -40,30 +45,32 @@ def content_loss(content_layers, target_content_layers,
     return content_loss
 
 
-def style_loss(grams, target_grams, style_weights):
-    """Defines the style loss function.
+def style_loss(grams, grams_target, style_weights):
+    """Defines the style loss function. Calculates the sum of Frobenius normed
+    differences between the target gram matrices and the input image gram
+    matrices.
 
     :param grams
         List of tensors for Gram matrices derived from training graph.
-    :param target_grams
+    :param grams_targets
         List of numpy arrays for Gram matrices precomputed from style image.
     :param style_weights
         List of floats to be used as weights for style layers.
     """
-    assert(len(grams) == len(target_grams))
-    num_style_layers = len(target_grams)
+    assert(len(grams) == len(grams_target))
+    num_style_layers = len(grams_target)
 
-    # Style loss
+    # Build the loss.
     style_losses = []
     for i in xrange(num_style_layers):
-        gram, target_gram = grams[i], target_grams[i]
+        gram, target_gram = grams[i], grams_target[i]
         style_weight = style_weights[i]
         _, c1, c2 = gram.get_shape().as_list()
         size = c1*c2
         loss = tf.reduce_sum(tf.square(gram - tf.constant(target_gram)))
         loss = style_weight * loss / size
         style_losses.append(loss)
-    style_loss = tf.add_n(style_losses, name='style_loss')
+    style_loss = tf.add_n(style_losses)
     return style_loss
 
 

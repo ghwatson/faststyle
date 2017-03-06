@@ -35,7 +35,8 @@ def create_net(X, upsample_method='deconv'):
 
     # Initial convolutional layers
     with tf.variable_scope('initconv_0'):
-        h = relu(inst_norm(conv2d(h, 3, 16, 9, [1, 1, 1, 1])))
+        ch_in = h.shape[3]
+        h = relu(inst_norm(conv2d(h, ch_in, 16, 9, [1, 1, 1, 1])))
     with tf.variable_scope('initconv_1'):
         h = relu(inst_norm(conv2d(h, 16, 32, 3, [1, 2, 2, 1])))
     with tf.variable_scope('initconv_2'):

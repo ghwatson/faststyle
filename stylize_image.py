@@ -40,6 +40,13 @@ def setup_parser():
                         chosen an error will occur.""",
                         choices=['resize', 'deconv'],
                         default='resize')
+    parser.add_argument('--content_mask_paths',
+                        help="""These are paths to image masks with greyscale
+                        values in the range [0,1]. These specify which regions
+                        of the content image we want to have affected by the
+                        styles encoded within the trained model.""",
+                        nargs='*',
+                        default=[None])
     return parser
 
 
@@ -53,11 +60,26 @@ if __name__ == '__main__':
     model_path = args.model_path
     upsample_method = args.upsample_method
     content_target_resize = args.content_target_resize
+    content_mask_paths = args.content_mask_paths
 
     # Read + preprocess input image.
     img = utils.imread(input_img_path)
     img = utils.imresize(img, content_target_resize)
-    img_4d = img[np.newaxis, :]
+    img_4d = img[np.newaxis, :].astype(np.float32)
+
+    # Read + preprocess + concat (to img_4D) content masks.
+    content_masks = []
+    for path in content_mask_paths:
+        if path is not None:
+            # Read it in
+            mask = utils.imread(path)
+        else:
+            # Construct an open mask with dimensions of input image.
+            mask = np.ones(img.shape[0:2]).astype(np.float32)
+
+        # Add the mask channel to image.
+        mask = mask[np.newaxis, :, :, np.newaxis]
+        img_4d = np.concatenate([img_4d, mask], 3)
 
     # Create the graph.
     with tf.variable_scope('img_t_net'):
