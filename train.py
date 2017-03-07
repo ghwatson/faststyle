@@ -24,6 +24,7 @@ import losses
 # TODO: make the default masks be a list of Nones with same size as imgs.
 # TODO: conditioning on rescale default
 # TODO: make the masks a list of Nones
+# TODO: [None] defaulting.
 
 
 def setup_parser():
@@ -128,9 +129,11 @@ def setup_parser():
                         help="""These are paths to image masks with greyscale
                         values in the range [0,1]. Used to identify regions of
                         style images that can be used at test-time to filter
-                        regions of a content image.""",
+                        regions of a content image. if the string \"OPEN\" is
+                        passed, then an open mask consisting of all 1's wil be
+                        created.""",
                         nargs='*',
-                        default=[None])
+                        default=['OPEN'])
 
     return parser
 
@@ -173,6 +176,11 @@ def main(args):
     # We want num_style_images == num_style_weights == num_masks.
     # In case that masks are none, we are using the entirety of styles in each
     # region. In this case, generate open masks for each image.
+    assert(len(region_weights) == len(style_img_paths) ==
+           len(style_mask_paths))
+
+    # Flag indicating whether or not we're using spatial control.
+    with_spatial_control = (style_mask_paths != ['OPEN'])
 
     # Pack data defining regions for spatial control into dict.
     regions = []
@@ -182,9 +190,8 @@ def main(args):
         img = style_imgs[i]
         weight = region_weights[i]
 
-        if style_mask_path is not None:
-            # load in.
-            style_mask = utils.imread(style_mask_path)
+        if style_mask_path != 'OPEN':
+            style_mask = utils.imread(style_mask_path, 0)
         else:
             # Generate open masks if no mask provided.
             shape = img.shape[0:2]
@@ -237,16 +244,21 @@ def main(args):
     with tf.variable_scope('img_t_net'):
         X = tf.placeholder(tf.float32, shape=shape, name='input')
 
-        # We append the regional masks to X.
-        expanded_masks = [region['content_mask'][np.newaxis, :, :]
-                          for region in regions]
-        expanded_masks = [tf.tile(m, [batch_size, 1, 1]) for m
-                          in expanded_masks]
-        mask_stack = reduce(lambda x, y: tf.stack([x, y], 3), expanded_masks)
-        X_with_masks = tf.concat([X, mask_stack[:, :, :, np.newaxis]], 3)
+        # We append the regional masks to X. We only add additional channels if
+        # were doing spatial control. Otherwise, it's redundant to include
+        # these channels in our model.
+        if with_spatial_control:
+            expanded_masks = [region['content_mask'][np.newaxis, :, :]
+                              for region in regions]
+            expanded_masks = [np.tile(m, [batch_size, 1, 1]) for m
+                              in expanded_masks]
+            mask_stack = tf.stack(expanded_masks, 3)
+            X_with_masks = tf.concat([X, mask_stack], 3)
 
-        # Finally, construct the network.
-        Y = create_net(X_with_masks, upsample_method)
+            # Finally, construct the network.
+            Y = create_net(X_with_masks, upsample_method)
+        else:
+            Y = create_net(X, upsample_method)
 
     # Connect vgg directly to the image transformation network.
     with tf.variable_scope('vgg'):

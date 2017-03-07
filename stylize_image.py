@@ -46,7 +46,7 @@ def setup_parser():
                         of the content image we want to have affected by the
                         styles encoded within the trained model.""",
                         nargs='*',
-                        default=[None])
+                        default=['OPEN'])
     return parser
 
 
@@ -61,6 +61,7 @@ if __name__ == '__main__':
     upsample_method = args.upsample_method
     content_target_resize = args.content_target_resize
     content_mask_paths = args.content_mask_paths
+    with_spatial_control = content_mask_paths != ['OPEN']
 
     # Read + preprocess input image.
     img = utils.imread(input_img_path)
@@ -68,18 +69,19 @@ if __name__ == '__main__':
     img_4d = img[np.newaxis, :].astype(np.float32)
 
     # Read + preprocess + concat (to img_4D) content masks.
-    content_masks = []
-    for path in content_mask_paths:
-        if path is not None:
-            # Read it in
-            mask = utils.imread(path)
-        else:
-            # Construct an open mask with dimensions of input image.
-            mask = np.ones(img.shape[0:2]).astype(np.float32)
+    print content_mask_paths
+    if with_spatial_control:
+        for path in content_mask_paths:
+            if path == 'OPEN':
+                mask = np.ones(img.shape[0:2]).astype(np.float32)
+            elif path == 'CLOSED':
+                mask = np.zeros(img.shape[0:2]).astype(np.float32)
+            else:
+                mask = utils.imread(path, 0)
 
-        # Add the mask channel to image.
-        mask = mask[np.newaxis, :, :, np.newaxis]
-        img_4d = np.concatenate([img_4d, mask], 3)
+            # Add the mask channel to image.
+            mask = mask[np.newaxis, :, :, np.newaxis]
+            img_4d = np.concatenate([img_4d, mask], 3)
 
     # Create the graph.
     with tf.variable_scope('img_t_net'):

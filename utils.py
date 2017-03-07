@@ -14,14 +14,18 @@ import cv2
 # TODO: merge the 2 imresize util functions?
 
 
-def imread(path):
+def imread(path, mode=-1):
     """Wrapper around cv2.imread. Switches channels to keep everything in RGB.
 
     :param path:
         String indicating path to image.
+    :param mode:
+        -1 for colour, 0 for grayscale, 1 for unchanged (for example, keep
+        alpha channels)
     """
-    img = cv2.imread(path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.imread(path, mode)
+    if mode == -1:
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     return img
 
 
