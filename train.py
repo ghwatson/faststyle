@@ -106,7 +106,7 @@ def setup_parser():
                         image(s). Can change the dominant stylistic
                         features.""",
                         nargs='+',
-                        default=1.0, type=float)
+                        default=[1.0], type=float)
     parser.add_argument('--upsample_method',
                         help="""Either deconvolution as in the original paper,
                         or the resize convolution method. The latter seems
