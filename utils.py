@@ -112,19 +112,14 @@ def get_grams(layer_names, guidance_channels=None):
         assert(len(layer_names) == len(guidance_channels))
     grams = []
     style_layers = get_layers(layer_names)
-    # for i, layer in enumerate(style_layers):
     for i, layer in enumerate(style_layers):
         b, h, w, c = layer.get_shape().as_list()
         num_elements = h*w*c
 
         # Perform spatial guidance, if applicable.
         if guidance_channels is not None:
-            # TODO: neaten this up.
             layer_guidance_channels = guidance_channels[i]
-            layer_guidance_channels = layer_guidance_channels[np.newaxis, :, :]
-            layer_guidance_channels = layer_guidance_channels[:, :, :,
-                                                              np.newaxis]
-            layer = layer_guidance_channels*layer
+            layer = guide_layer(layer, layer_guidance_channels)
 
         features_matrix = tf.reshape(layer, tf.stack([b, -1, c]))
 
@@ -133,6 +128,31 @@ def get_grams(layer_names, guidance_channels=None):
         gram_matrix = gram_matrix / tf.cast(num_elements, tf.float32)
         grams.append(gram_matrix)
     return grams
+
+
+def guide_layer(layer, layer_guidance_channels):
+    """Applies guidance channels to a layer. Renormalizes the layer as well to
+    account for the effect of the guidance channel.
+
+    :param layer:
+        tf.Tensor of dimension NxHxWxC.
+    :param layer_guidance_channels:
+        A layer's guidance channels, obtained from utils.propagate_mask.
+    """
+    layer_guidance_channels = layer_guidance_channels[np.newaxis, :, :]
+    layer_guidance_channels = layer_guidance_channels[:, :, :, np.newaxis]
+    # Guide the layer while preserving its norm.
+    pre_norm = l2_normalization(layer, [1, 2])
+    layer = layer_guidance_channels*layer
+    post_norm = l2_normalization(layer, [1, 2])
+    layer = (layer / post_norm) * pre_norm
+    return layer
+
+
+def l2_normalization(x, dim, epsilon=1e-12, name=None):
+    square_sum = tf.reduce_sum(tf.square(x), dim, keep_dims=True)
+    x_norm = tf.sqrt(tf.maximum(square_sum, epsilon))
+    return x_norm
 
 
 def normalized(a, axis=-1, order=2):
@@ -167,8 +187,6 @@ def propagate_mask(mask, layer_names, strategy='Simple'):
         # We simply downsample without considering the receptive fields.
         for size in layer_sizes:
             layer_guidance_channels = imresize_shape(mask, size)
-            # Normalize.
-            layer_guidance_channels = normalized(layer_guidance_channels)
             guidance_channels.append(layer_guidance_channels)
     elif strategy is 'All':
         raise ValueError('Not yet implemented.')

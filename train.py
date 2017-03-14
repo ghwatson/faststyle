@@ -25,6 +25,7 @@ import losses
 # TODO: conditioning on rescale default
 # TODO: make the masks a list of Nones
 # TODO: [None] defaulting.
+# TODO: add a no-style channel option.
 
 
 def setup_parser():
@@ -187,23 +188,23 @@ def main(args):
     num_regions = len(region_weights)
     for i in xrange(num_regions):
         style_mask_path = style_mask_paths[i]
-        img = style_imgs[i]
+        style_img = style_imgs[i]
         weight = region_weights[i]
 
         if style_mask_path != 'OPEN':
             style_mask = utils.imread(style_mask_path, 0)
         else:
             # Generate open masks if no mask provided.
-            shape = img.shape[0:2]
-            style_mask = np.ones(shape)
+            style_mask = np.ones(style_img.shape[0:2])
 
         # Construct dummy content masks to feed into control channel.
+        # TODO: implement this last band better.
         content_mask = np.zeros(preprocess_size).astype(np.float32)
         band_length = preprocess_size[1]/num_regions
         content_mask[:, i*band_length:(i+1)*band_length] = 1.0
 
         # Pack data into region
-        region = {'weight': weight, 'style_img': img,
+        region = {'weight': weight, 'style_img': style_img,
                   'style_mask': style_mask, 'content_mask': content_mask}
         regions.append(region)
 

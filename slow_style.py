@@ -18,9 +18,13 @@ def setup_parser():
     """Used to interface with the command-line."""
     parser = argparse.ArgumentParser(
                 description='Train a style transfer net.')
-    parser.add_argument('--style_img_path',
-                        help='Path to style template image.')
+    parser.add_argument('--style_img_paths',
+                        default=['./style_images/starry_night_crop.jpg'],
+                        nargs='+',
+                        help="""Path to style template image. Can pass more
+                        than one in the case of spatial control.""")
     parser.add_argument('--cont_img_path',
+                        default='./results/chicago.jpg',
                         help='Path to content template image.')
     parser.add_argument('--learn_rate',
                         help='Learning rate for optimizer.',
@@ -52,11 +56,13 @@ def setup_parser():
                         help="""TV regularization weight.""",
                         default=1.e-4,
                         type=float)
-    parser.add_argument('--style_target_resize',
-                        help="""Scale factor to apply to the style target image.
-                        Can change the features that get pronounced.""",
-                        default=1.0, type=float)
-    parser.add_argument('--cont_target_resize',
+    parser.add_argument('--style_target_scales',
+                        help="""Scale factor(s) to apply to the style target
+                        image(s). Can change the dominant stylistic
+                        features.""",
+                        nargs='+',
+                        default=[1.0], type=float)
+    parser.add_argument('--cont_target_scale',
                         help="""Resizes content input by this size. Output
                         image will have the same size.""",
                         default=1.0,
@@ -64,12 +70,38 @@ def setup_parser():
     parser.add_argument('--output_img_path',
                         help='Desired output path. Defaults to out.jpg',
                         default='./out.jpg')
+    parser.add_argument('--region_weights',
+                        help="""Region weights that go with each style image
+                        provided. These are used in spatial control. The number
+                        of weights provided must be the same as style images
+                        provided. Setting a weight to zero will attempt to
+                        keep the respective region entirely content.""",
+                        nargs='+',
+                        default=[1.0],
+                        type=float)
+    parser.add_argument('--style_mask_paths',
+                        help="""These are paths to image masks with greyscale
+                        values in the range [0,1]. Used to identify regions of
+                        style images that can be used at test-time to filter
+                        regions of a content image. if the string \"OPEN\" is
+                        passed, then an open mask consisting of all 1's wil be
+                        created.""",
+                        nargs='*',
+                        default=['OPEN'])
+    parser.add_argument('--content_mask_paths',
+                        help="""These are paths to image masks with greyscale
+                        values in the range [0,1]. These specify which regions
+                        of the content image we want to have affected by the
+                        styles encoded within the trained model. Can pass OPEN
+                        or CLOSED to specify an open or closed mask.""",
+                        nargs='*',
+                        default=['OPEN'])
     return parser
 
 
 def main(args):
     # Unpack command-line arguments.
-    style_img_path = args.style_img_path
+    style_img_paths = args.style_img_paths
     cont_img_path = args.cont_img_path
     learn_rate = args.learn_rate
     loss_content_layers = args.loss_content_layers
@@ -78,39 +110,88 @@ def main(args):
     style_weights = args.style_weights
     num_steps_break = args.num_steps_break
     beta = args.beta
-    style_target_resize = args.style_target_resize
-    cont_target_resize = args.cont_target_resize
+    style_target_scales = args.style_target_scales
+    cont_target_scale = args.cont_target_scale
     output_img_path = args.output_img_path
+    style_mask_paths = args.style_mask_paths
+    content_mask_paths = args.content_mask_paths
+    region_weights = args.region_weights
+
+    # Check options
+    assert(len(style_mask_paths) == len(region_weights))
+    assert(len(content_mask_paths) == len(region_weights))
 
     # Load in style image that will define the model.
-    style_img = utils.imread(style_img_path)
-    style_img = utils.imresize(style_img, style_target_resize)
-    style_img = style_img[np.newaxis, :].astype(np.float32)
+    style_imgs = [utils.imread(path) for path in style_img_paths]
+    style_imgs = [utils.imresize(img, s) for img, s in
+                  zip(style_imgs, style_target_scales)]
+    style_imgs = [img[np.newaxis, :].astype(np.float32) for img in style_imgs]
+
+    # Read in + resize the content image.
+    cont_img = utils.imread(cont_img_path)
+    cont_img = utils.imresize(cont_img, cont_target_scale)
+    cont_img = cont_img[np.newaxis, :].astype(np.float32)
+
+    # Pack data defining regions for spatial control into dict.
+    regions = []
+    num_regions = len(region_weights)
+    for i in xrange(num_regions):
+        style_mask_path = style_mask_paths[i]
+        content_mask_path = content_mask_paths[i]
+        style_img = style_imgs[i]
+        weight = region_weights[i]
+
+        if style_mask_path != 'OPEN':
+            style_mask = utils.imread(style_mask_path, 0)
+        else:
+            # Generate open masks if no mask provided.
+            style_mask = np.ones(style_img.shape[0:2])
+
+        # Do the same for content mask.
+        if content_mask_path == 'OPEN':
+            # Generate open masks if no mask provided.
+            content_mask = np.ones(cont_img.shape[0:2])
+        elif content_mask_path == 'CLOSED':
+            content_mask = np.zeros(cont_img.shape[0:2])
+        else:
+            content_mask = utils.imread(content_mask_path, 0)
+
+        # Pack data into region
+        region = {'weight': weight, 'style_img': style_img,
+                  'style_mask': style_mask, 'content_mask': content_mask}
+        regions.append(region)
 
     # Alter the names to include a namescope that we'll use + output suffix.
     loss_style_layers = ['vgg/' + i + ':0' for i in loss_style_layers]
     loss_content_layers = ['vgg/' + i + ':0' for i in loss_content_layers]
 
-    # Get target Gram matrices from the style image.
-    with tf.variable_scope('vgg'):
-        X_vgg = tf.placeholder(tf.float32, shape=style_img.shape,
-                               name='input')
-        vggnet = vgg16.vgg16(X_vgg)
-    with tf.Session() as sess:
-        vggnet.load_weights('libs/vgg16_weights.npz', sess)
-        print 'Precomputing target style layers.'
-        target_grams = sess.run(utils.get_grams(loss_style_layers),
-                                feed_dict={'vgg/input:0': style_img})
+    # Get target (guided) Gram matrices from the style image(s).
+    grams_targets = []
+    for region in regions:
+        with tf.variable_scope('vgg'):
+            X_vgg = tf.placeholder(tf.float32, shape=region['style_img'].shape)
+            vggnet = vgg16.vgg16(X_vgg)
 
-    # Clean up so we can re-create vgg at size of input content image for
-    # training.
-    print 'Resetting default graph.'
-    tf.reset_default_graph()
+        # Spatial control: given the current VGG architecture induced by the
+        # style image, we propagate the mask.
+        guide_channels = utils.propagate_mask(region['style_mask'],
+                                              loss_style_layers)
 
-    # Read in + resize the content image.
-    cont_img = utils.imread(cont_img_path)
-    cont_img = utils.imresize(cont_img, cont_target_resize)
-    cont_img = cont_img[np.newaxis, :].astype(np.float32)
+        with tf.Session() as sess:
+            vggnet.load_weights('libs/vgg16_weights.npz', sess)
+            print 'Precomputing target style layers.'
+            grams_tensors = utils.get_grams(loss_style_layers, guide_channels)
+            grams_target = sess.run(grams_tensors,
+                                    feed_dict={X_vgg: region['style_img']})
+
+        # Pack this into the region data.
+        region['grams_target'] = grams_target
+        grams_targets.append(grams_target)
+
+        # Clean up so we can reinstantiate a new VGG (we're working with a
+        # static graph for the time being).
+        print 'Resetting default graph.'
+        tf.reset_default_graph()
 
     # Setup VGG and initialize it with white noise image that we'll optimize.
     shape = cont_img.shape
@@ -123,11 +204,16 @@ def main(args):
     with tf.variable_scope('vgg'):
         vggnet = vgg16.vgg16(X)
 
-    # Get the gram matrices' tensors for the style loss features.
-    input_img_grams = utils.get_grams(loss_style_layers)
-
     # Get the tensors for content loss features.
     content_layers = utils.get_layers(loss_content_layers)
+
+    # Get the gram matrices' tensors for the style loss features.
+    for region in regions:
+        guide_channels = utils.propagate_mask(region['content_mask'],
+                                              loss_style_layers)
+        input_img_grams = utils.get_grams(loss_style_layers, guide_channels)
+        # Pack this region's gram matrices into the dict.
+        region['input_img_grams'] = input_img_grams
 
     # Get the target content features
     with tf.Session() as sess:
@@ -139,8 +225,12 @@ def main(args):
     # Create loss function
     cont_loss = losses.content_loss(content_layers, content_targets,
                                     content_weights)
-    style_loss = losses.style_loss(input_img_grams, target_grams,
-                                   style_weights)
+    style_loss = 0
+    for region in regions:
+        region_style_loss = losses.style_loss(region['input_img_grams'],
+                                              region['grams_target'],
+                                              style_weights)
+        style_loss += region['weight']*region_style_loss
     tv_loss = losses.tv_loss(X)
     loss = cont_loss + style_loss + beta * tv_loss
 

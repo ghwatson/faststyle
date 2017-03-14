@@ -69,7 +69,6 @@ if __name__ == '__main__':
     img_4d = img[np.newaxis, :].astype(np.float32)
 
     # Read + preprocess + concat (to img_4D) content masks.
-    print content_mask_paths
     if with_spatial_control:
         for path in content_mask_paths:
             if path == 'OPEN':
