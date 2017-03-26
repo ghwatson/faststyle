@@ -77,6 +77,9 @@ if __name__ == '__main__':
                 mask = np.zeros(img.shape[0:2]).astype(np.float32)
             else:
                 mask = utils.imread(path, 0)
+                if img.shape[0:2] != mask.shape:
+                    mask = utils.imresize(mask, content_target_resize)
+                mask = mask/255.0  # Normalize to [0,1]
 
             # Add the mask channel to image.
             mask = mask[np.newaxis, :, :, np.newaxis]

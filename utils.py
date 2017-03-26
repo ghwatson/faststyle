@@ -99,7 +99,7 @@ def get_layers(layer_names):
 def get_grams(layer_names, guidance_channels=None):
     """Get the style layer tensors from the graph using the given layer_names.
     The option to pass in a region's guidance channels for the set of layers
-    is available. Spatial control described in:
+    is available. These channels are used for spatial control, described in:
                https://arxiv.org/abs/1611.07865
 
     :param layer_names:
@@ -113,7 +113,7 @@ def get_grams(layer_names, guidance_channels=None):
     grams = []
     style_layers = get_layers(layer_names)
     for i, layer in enumerate(style_layers):
-        b, h, w, c = layer.get_shape().as_list()
+        _, h, w, c = layer.get_shape().as_list()
         num_elements = h*w*c
 
         # Perform spatial guidance, if applicable.
@@ -121,7 +121,7 @@ def get_grams(layer_names, guidance_channels=None):
             layer_guidance_channels = guidance_channels[i]
             layer = guide_layer(layer, layer_guidance_channels)
 
-        features_matrix = tf.reshape(layer, tf.stack([b, -1, c]))
+        features_matrix = tf.reshape(layer, tf.stack([-1, h*w, c]))
 
         gram_matrix = tf.matmul(features_matrix, features_matrix,
                                 transpose_a=True)
@@ -131,41 +131,28 @@ def get_grams(layer_names, guidance_channels=None):
 
 
 def guide_layer(layer, layer_guidance_channels):
-    """Applies guidance channels to a layer. Renormalizes the layer as well to
-    account for the effect of the guidance channel.
+    """Applies guidance channels to a layer. If desired, this is a good spot to
+    encode normalization in the spatial control strategy.
 
     :param layer:
         tf.Tensor of dimension NxHxWxC.
     :param layer_guidance_channels:
         A layer's guidance channels, obtained from utils.propagate_mask.
     """
-    layer_guidance_channels = layer_guidance_channels[np.newaxis, :, :]
-    layer_guidance_channels = layer_guidance_channels[:, :, :, np.newaxis]
-    # Guide the layer while preserving its norm.
-    pre_norm = l2_normalization(layer, [1, 2])
     layer = layer_guidance_channels*layer
-    post_norm = l2_normalization(layer, [1, 2])
-    layer = (layer / post_norm) * pre_norm
     return layer
 
-
-def l2_normalization(x, dim, epsilon=1e-12, name=None):
-    square_sum = tf.reduce_sum(tf.square(x), dim, keep_dims=True)
-    x_norm = tf.sqrt(tf.maximum(square_sum, epsilon))
-    return x_norm
-
-
-def normalized(a, axis=-1, order=2):
-    l2 = np.atleast_1d(np.linalg.norm(a, order, axis))
-    l2[l2 == 0] = 1
-    return a / np.expand_dims(l2, axis)
-
-
-def propagate_mask(mask, layer_names, strategy='Simple'):
+def propagate_mask(mask, layer_names, strategy='Simple', vggnet=None,
+                   batchsize=2):
     """Takes a mask and from it creates masks for each layer of style
     features.  Convolutional neural networks lose spatial precision, so
     there are multiple strategies to do this. Reference:
                https://arxiv.org/abs/1611.07865
+    Simple: Just resizes the mask to the layer's (H,W).
+    All: Propagate the mask's open region to neurons in the layer that are
+         connected to it.
+    Inside: Only propagates open values in the mask to a neuron if that
+    neuron's receptive field overlaps entirely with open values.
 
     :param mask:
         HxW Numpy array. Mask that gets propagated so that it can be used at
@@ -176,24 +163,83 @@ def propagate_mask(mask, layer_names, strategy='Simple'):
     :param strategy:
         String = Simple, All, or Inside. Strategies as detailed in the above
         reference's supplement.
+    :param vggnet:
+        Pass in the vggnet model. Used to compute values of layers for a probe
+        image that is needed in the All and Inside strategies. Technically, all
+        you really need is dimensions defining VGG, but it's simple to just do
+        it empirically as done here by passing through a probe image.
+    :param batchsize:
+        Integer > 1. Only used for All and Inside methods. Used to
+        stochastically determine how input neurons influence neurons at
+        different layers.
     """
     # Get the spatial dimensions of each layer.
     layers = get_layers(layer_names)
     layer_sizes = [tuple(layer.get_shape().as_list()[1:3]) for layer in layers]
 
+    # Check options.
+    if strategy == 'All' or strategy == 'Inside':
+        assert(vggnet is not None)
+        assert(batchsize > 1)
+
     # Propagate
     guidance_channels = []
-    if strategy is 'Simple':
-        # We simply downsample without considering the receptive fields.
+    if strategy == 'Simple':
+        # We simply downsample without considering the receptive fields. Some
+        # mixing of styles occurs at the boundary.
         for size in layer_sizes:
             layer_guidance_channels = imresize_shape(mask, size)
+            layer_guidance_channels = layer_guidance_channels[np.newaxis, :, :,
+                                                              np.newaxis]
             guidance_channels.append(layer_guidance_channels)
-    elif strategy is 'All':
-        raise ValueError('Not yet implemented.')
-    elif strategy is 'Inside':
-        raise ValueError('Not yet implemented.')
+    elif strategy == 'All':
+        # Create batch of probe images filled with noise where the mask is
+        # open. We can then look for a noisy signal at later layers by looking
+        # at the variance in the batch. We reduce out the channels dimension
+        # via the mean. Lots of mixing at the boundary occurs.
+        probe = np.zeros((batchsize,) + mask.shape + (3,))
+        probe[:, mask.astype(bool), :] += \
+                1e2*np.random.randn(*probe[:, mask.astype(bool), :].shape)
+        with tf.Session() as sess:
+            vggnet.load_weights('libs/vgg16_weights.npz', sess)
+            layers_out = sess.run(layers, feed_dict={vggnet.imgs: probe})
+        for layer in layers_out:
+            layer_guidance_channels = (layer.var(0).mean(2) !=
+                                       0.0).astype(np.float32)
+            layer_guidance_channels = layer_guidance_channels[np.newaxis, :, :,
+                                                              np.newaxis]
+            guidance_channels.append(layer_guidance_channels)
+    elif strategy == 'Inside':
+        # Similar in implementation to 'All' strategy, but this time we invert
+        # the mask, and probe which neurons are connected to the closed region
+        # of the mask. The values in the guidance channel corresponding to
+        # these neurons will be set to 0. This ensures that only neurons whose
+        # receptive field lies entirely within the open region of the given
+        # mask are included. No mixing occurs, but the boundary is
+        # under-stylized.
+        inv_mask = -1.0*mask + 1.0
+        probe = np.zeros((batchsize,) + inv_mask.shape + (3,))
+        probe[:, inv_mask.astype(bool), :] += \
+                1e2*np.random.randn(*probe[:, inv_mask.astype(bool), :].shape)
+        with tf.Session() as sess:
+            vggnet.load_weights('libs/vgg16_weights.npz', sess)
+            layers_out = sess.run(layers, feed_dict={vggnet.imgs: probe})
+        for layer in layers_out:
+            layer_guidance_channels = (layer.var(0).mean(2) ==
+                                       0.0).astype(np.float32)
+            layer_guidance_channels = layer_guidance_channels[np.newaxis, :, :,
+                                                              np.newaxis]
+            guidance_channels.append(layer_guidance_channels)
+    elif strategy == 'Boundary':
+        # In each layer's channels, we interpret the mask as defining the
+        # midsection of a boundary, defined as the difference between the
+        # All-type channels and the Inside-type channels. This might be useful
+        # in getting better results than the Simple strategy. Less mixing
+        # supposedly occurs if the boundary region is left unguided according
+        # to the reference at the top of this function.
+        raise ValueError("Boundary strategy not yet implemented.")
     else:
         raise ValueError("""{} is not a valid strategy name. Options are:
-                         Simple, Inside, or All.""")
+                         Simple, Inside, or All.""".format(strategy))
 
     return guidance_channels

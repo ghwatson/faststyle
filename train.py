@@ -26,6 +26,7 @@ import losses
 # TODO: make the masks a list of Nones
 # TODO: [None] defaulting.
 # TODO: add a no-style channel option.
+# TODO: add colour preservation option.
 
 
 def setup_parser():
@@ -135,6 +136,12 @@ def setup_parser():
                         created.""",
                         nargs='*',
                         default=['OPEN'])
+    # parser.add_argument('--spatial_strategy',
+                        # help="""Specifies which propagation strategy to use for
+                        # the supplied masks. Only relevant if utilizing spatial
+                        # control.""",
+                        # choices=['All', 'Simple', 'Inside'],
+                        # default='Simple')
 
     return parser
 
@@ -166,6 +173,14 @@ def main(args):
     upsample_method = args.upsample_method
     region_weights = args.region_weights
     style_mask_paths = args.style_mask_paths
+    # spatial_strategy = args.spatial_strategy
+
+    # Check options
+    assert(len(region_weights) == len(style_img_paths) ==
+           len(style_mask_paths))
+
+    # Flag indicating whether or not we're using spatial control.
+    with_spatial_control = (style_mask_paths != ['OPEN'])
 
     # Load in style image(s) that will define the model.
     style_imgs = [utils.imread(path) for path in style_img_paths]
@@ -173,38 +188,30 @@ def main(args):
                   zip(style_imgs, style_target_scales)]
     style_imgs = [img[np.newaxis, :].astype(np.float32) for img in style_imgs]
 
-    # TODO: add option checker here.
-    # We want num_style_images == num_style_weights == num_masks.
-    # In case that masks are none, we are using the entirety of styles in each
-    # region. In this case, generate open masks for each image.
-    assert(len(region_weights) == len(style_img_paths) ==
-           len(style_mask_paths))
-
-    # Flag indicating whether or not we're using spatial control.
-    with_spatial_control = (style_mask_paths != ['OPEN'])
-
     # Pack data defining regions for spatial control into dict.
     regions = []
     num_regions = len(region_weights)
     for i in xrange(num_regions):
-        style_mask_path = style_mask_paths[i]
-        style_img = style_imgs[i]
-        weight = region_weights[i]
-
-        if style_mask_path != 'OPEN':
-            style_mask = utils.imread(style_mask_path, 0)
+        if style_mask_paths[i] == 'OPEN':
+            style_mask = np.ones(style_imgs[i].shape[1:3])
+        elif style_mask_paths[i] == 'CLOSED':
+            style_mask = np.zeros(style_imgs[i].shape[1:3])
         else:
-            # Generate open masks if no mask provided.
-            style_mask = np.ones(style_img.shape[0:2])
+            style_mask = utils.imread(style_mask_paths[i], 0)
+            style_mask = utils.imresize(style_mask, style_target_scales[i])
+            style_mask = style_mask/255.0  # Normalize to [0,1]
 
         # Construct dummy content masks to feed into control channel.
-        # TODO: implement this last band better.
         content_mask = np.zeros(preprocess_size).astype(np.float32)
-        band_length = preprocess_size[1]/num_regions
+        band_length = preprocess_size[1]/(num_regions)
         content_mask[:, i*band_length:(i+1)*band_length] = 1.0
 
+        # Normalize weight by number of regions.
+        # TODO: think about more robust normalization strategy.
+        weight = region_weights[i]*1.0/num_regions
+
         # Pack data into region
-        region = {'weight': weight, 'style_img': style_img,
+        region = {'weight': weight, 'style_img': style_imgs[i],
                   'style_mask': style_mask, 'content_mask': content_mask}
         regions.append(region)
 
@@ -213,7 +220,6 @@ def main(args):
     loss_content_layers = ['vgg/' + i + ':0' for i in loss_content_layers]
 
     # Get target (guided) Gram matrices from the style image(s).
-    grams_targets = []
     for region in regions:
         with tf.variable_scope('vgg'):
             X_vgg = tf.placeholder(tf.float32, shape=region['style_img'].shape)
@@ -224,16 +230,14 @@ def main(args):
         guide_channels = utils.propagate_mask(region['style_mask'],
                                               loss_style_layers)
 
+        # Calculate gram matrices.
         with tf.Session() as sess:
             vggnet.load_weights('libs/vgg16_weights.npz', sess)
             print 'Precomputing target style layers.'
             grams_tensors = utils.get_grams(loss_style_layers, guide_channels)
             grams_target = sess.run(grams_tensors,
                                     feed_dict={X_vgg: region['style_img']})
-
-        # Pack this into the region data.
         region['grams_target'] = grams_target
-        grams_targets.append(grams_target)
 
         # Clean up so we can reinstantiate a new VGG (we're working with a
         # static graph for the time being).
@@ -255,8 +259,6 @@ def main(args):
                               in expanded_masks]
             mask_stack = tf.stack(expanded_masks, 3)
             X_with_masks = tf.concat([X, mask_stack], 3)
-
-            # Finally, construct the network.
             Y = create_net(X_with_masks, upsample_method)
         else:
             Y = create_net(X, upsample_method)
@@ -266,16 +268,11 @@ def main(args):
         vggnet = vgg16.vgg16(Y)
 
     # Get the gram matrices' tensors for the style loss features.
-    # TODO: here, we want to create the tensor for content guidance channels.
-    # We'll need to make it so that the guidance stuff works with tensors too!
-    # Which I believe it should.
     for region in regions:
         guide_channels = utils.propagate_mask(region['content_mask'],
                                               loss_style_layers)
-        input_img_grams = utils.get_grams(loss_style_layers, guide_channels)
-
-        # Pack this region's gram matrices into the dict.
-        region['input_img_grams'] = input_img_grams
+        region['input_img_grams'] = utils.get_grams(loss_style_layers,
+                                                    guide_channels)
 
     # Get the tensors for content loss features.
     content_layers = utils.get_layers(loss_content_layers)
@@ -361,8 +358,7 @@ def main(args):
                 batch = sess.run(batch_op)
 
                 # Collect content targets
-                content_data = sess.run(content_layers,
-                                        feed_dict={Y: batch})
+                content_data = sess.run(content_layers, feed_dict={Y: batch})
 
                 feed_dict = {X: batch,
                              content_targets: content_data,

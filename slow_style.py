@@ -96,6 +96,17 @@ def setup_parser():
                         or CLOSED to specify an open or closed mask.""",
                         nargs='*',
                         default=['OPEN'])
+    # To be added:
+    # parser.add_argument('--spatial_strategy',
+                        # help="""Specifies which propagation strategy to use for
+                        # the supplied masks. Only relevant if utilizing spatial
+                        # control. See utils.propagate_mask for details. The
+                        # Ideal strategy is the Inside strategy combined with
+                        # unguided stylization.""",
+                        # nargs='*',
+                        # choices=['All', 'Simple', 'Inside'],
+                        # default='Simple')
+
     return parser
 
 
@@ -116,9 +127,11 @@ def main(args):
     style_mask_paths = args.style_mask_paths
     content_mask_paths = args.content_mask_paths
     region_weights = args.region_weights
+    # spatial_strategy = args.spatial_strategy
 
     # Check options
     assert(len(style_mask_paths) == len(region_weights))
+    assert(len(style_mask_paths) == len(style_img_paths))
     assert(len(content_mask_paths) == len(region_weights))
 
     # Load in style image that will define the model.
@@ -136,28 +149,30 @@ def main(args):
     regions = []
     num_regions = len(region_weights)
     for i in xrange(num_regions):
-        style_mask_path = style_mask_paths[i]
-        content_mask_path = content_mask_paths[i]
-        style_img = style_imgs[i]
-        weight = region_weights[i]
-
-        if style_mask_path != 'OPEN':
-            style_mask = utils.imread(style_mask_path, 0)
+        # Get + preprocess style mask.
+        if style_mask_paths[i] != 'OPEN':
+            style_mask = utils.imread(style_mask_paths[i], 0)
+            style_mask = utils.imresize(style_mask, style_target_scales[i])
+            style_mask = style_mask/255.0
         else:
             # Generate open masks if no mask provided.
-            style_mask = np.ones(style_img.shape[0:2])
+            style_mask = np.ones(style_imgs[i].shape[1:3])
 
-        # Do the same for content mask.
-        if content_mask_path == 'OPEN':
+        if content_mask_paths[i] == 'OPEN':
             # Generate open masks if no mask provided.
-            content_mask = np.ones(cont_img.shape[0:2])
-        elif content_mask_path == 'CLOSED':
-            content_mask = np.zeros(cont_img.shape[0:2])
+            content_mask = np.ones(cont_img.shape[1:3])
+        elif content_mask_paths[i] == 'CLOSED':
+            content_mask = np.zeros(cont_img.shape[1:3])
         else:
-            content_mask = utils.imread(content_mask_path, 0)
+            content_mask = utils.imread(content_mask_paths[i], 0)
+            content_mask = utils.imresize(content_mask, cont_target_scale)
+            content_mask = content_mask/255.0
+
+        # Normalize by number of regions.
+        weight = region_weights[i]*1.0/num_regions
 
         # Pack data into region
-        region = {'weight': weight, 'style_img': style_img,
+        region = {'weight': weight, 'style_img': style_imgs[i],
                   'style_mask': style_mask, 'content_mask': content_mask}
         regions.append(region)
 
@@ -166,7 +181,6 @@ def main(args):
     loss_content_layers = ['vgg/' + i + ':0' for i in loss_content_layers]
 
     # Get target (guided) Gram matrices from the style image(s).
-    grams_targets = []
     for region in regions:
         with tf.variable_scope('vgg'):
             X_vgg = tf.placeholder(tf.float32, shape=region['style_img'].shape)
@@ -186,7 +200,6 @@ def main(args):
 
         # Pack this into the region data.
         region['grams_target'] = grams_target
-        grams_targets.append(grams_target)
 
         # Clean up so we can reinstantiate a new VGG (we're working with a
         # static graph for the time being).
@@ -196,11 +209,8 @@ def main(args):
     # Setup VGG and initialize it with white noise image that we'll optimize.
     shape = cont_img.shape
     with tf.variable_scope('to_train'):
-        white_noise = np.random.rand(shape[0], shape[1],
-                                     shape[2], shape[3])*255.0
-        white_noise = tf.constant(white_noise.astype(np.float32))
-        X = tf.get_variable('input', dtype=tf.float32,
-                            initializer=white_noise)
+        noise = tf.random_uniform(shape)*255.0
+        X = tf.get_variable('input', dtype=tf.float32, initializer=noise)
     with tf.variable_scope('vgg'):
         vggnet = vgg16.vgg16(X)
 
@@ -212,7 +222,6 @@ def main(args):
         guide_channels = utils.propagate_mask(region['content_mask'],
                                               loss_style_layers)
         input_img_grams = utils.get_grams(loss_style_layers, guide_channels)
-        # Pack this region's gram matrices into the dict.
         region['input_img_grams'] = input_img_grams
 
     # Get the target content features
