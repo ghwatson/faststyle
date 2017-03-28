@@ -1,4 +1,5 @@
-"""Use a model to stylize an OpenCV webcam feed.
+"""Use a model to stylize an OpenCV webcam feed. Not for use with spatially
+controlled models.
 
 File author: Grant Watson
 Date: Feb 2017

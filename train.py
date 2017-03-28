@@ -1,6 +1,8 @@
 """
 Train image transformation network in conjunction with perceptual loss. Save
-the image transformation network for later application.
+the image transformation network for later application. Optionally, can take
+advantage of spatial control capabilities: the ability to stylize regions
+separately at inference-time.
 
 File author: Grant Watson
 Date: Jan 2017
@@ -21,10 +23,6 @@ import losses
 # TODO: more conditional stuff/assertions for the spatial control.
 # TODO: the capacity to have different content/style weights per region?
 # TODO: add dynamic VGG.
-# TODO: make the default masks be a list of Nones with same size as imgs.
-# TODO: conditioning on rescale default
-# TODO: make the masks a list of Nones
-# TODO: [None] defaulting.
 # TODO: add a no-style channel option.
 # TODO: add colour preservation option.
 
@@ -57,7 +55,7 @@ def setup_parser():
                         them into the image transformation network.""",
                         default=[256, 256], nargs=2, type=int)
     parser.add_argument('--run_name',
-                        help="""Name of log directory within the Tensoboard
+                        help="""Name of log directory within the Tensorboard
                         directory (./summaries). If not set, will use
                         --model_name to create a unique directory.""",
                         default=None)
@@ -220,6 +218,7 @@ def main(args):
     loss_content_layers = ['vgg/' + i + ':0' for i in loss_content_layers]
 
     # Get target (guided) Gram matrices from the style image(s).
+    print 'Precomputing target style layers...'
     for region in regions:
         with tf.variable_scope('vgg'):
             X_vgg = tf.placeholder(tf.float32, shape=region['style_img'].shape)
@@ -233,7 +232,6 @@ def main(args):
         # Calculate gram matrices.
         with tf.Session() as sess:
             vggnet.load_weights('libs/vgg16_weights.npz', sess)
-            print 'Precomputing target style layers.'
             grams_tensors = utils.get_grams(loss_style_layers, guide_channels)
             grams_target = sess.run(grams_tensors,
                                     feed_dict={X_vgg: region['style_img']})
@@ -241,7 +239,6 @@ def main(args):
 
         # Clean up so we can reinstantiate a new VGG (we're working with a
         # static graph for the time being).
-        print 'Resetting default graph.'
         tf.reset_default_graph()
 
     # Load in image transformation network into default graph.

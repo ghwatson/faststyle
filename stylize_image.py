@@ -41,10 +41,10 @@ def setup_parser():
                         choices=['resize', 'deconv'],
                         default='resize')
     parser.add_argument('--content_mask_paths',
-                        help="""These are paths to image masks with greyscale
-                        values in the range [0,1]. These specify which regions
-                        of the content image we want to have affected by the
-                        styles encoded within the trained model.""",
+                        help="""These are paths to greyscale image masks. These
+                        specify which regions of the content image we want to
+                        have affected by the styles encoded within the trained
+                        model.""",
                         nargs='*',
                         default=['OPEN'])
     return parser
