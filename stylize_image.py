@@ -61,8 +61,10 @@ if __name__ == '__main__':
 
     # Create the graph.
     with tf.variable_scope('img_t_net'):
-        X = tf.placeholder(tf.float32, shape=img_4d.shape, name='input')
-        Y = create_net(X, upsample_method)
+        Xl = tf.placeholder(tf.float32, shape=img_4d.shape, name='input')
+        Xr = tf.placeholder(tf.float32, shape=img_4d.shape, name='input')
+        X = tf.concat([Xl, Xr], 3)
+        Y = create_net(X, upsample_method, stereo=True)
 
     # Saver used to restore the model to the session.
     saver = tf.train.Saver()
@@ -72,11 +74,14 @@ if __name__ == '__main__':
         print 'Loading up model...'
         saver.restore(sess, model_path)
         print 'Evaluating...'
-        img_out = sess.run(Y, feed_dict={X: img_4d})
+        stereo_out = sess.run(Y, feed_dict={Xl: img_4d, Xr: img_4d})
 
     # Postprocess + save the output image.
-    print 'Saving image.'
-    img_out = np.squeeze(img_out)
+    print 'Saving stereo image.'
+    stereo_out = np.squeeze(stereo_out)
+    l_out = stereo_out[:, :, 0:3]
+    r_out = stereo_out[:, :, 3:6]
+    img_out = np.hstack([l_out, r_out])
     utils.imwrite(output_img_path, img_out)
 
     print 'Done.'

@@ -157,8 +157,15 @@ def main(args):
     # Load in image transformation network into default graph.
     shape = [batch_size] + preprocess_size + [3]
     with tf.variable_scope('img_t_net'):
-        X = tf.placeholder(tf.float32, shape=shape, name='input')
-        Y = create_net(X, upsample_method)
+        Xl = tf.placeholder(tf.float32, shape=shape, name='input_left')
+        Xr = tf.placeholder(tf.float32, shape=shape, name='input_right')
+        X = tf.concat([Xl, Xr], 3)
+        Y = create_net(X, upsample_method, stereo=True)
+        # we take batches over left and right, then concatenate along the batch
+        # dimension so that we can pass it all into vgg.
+        Yl = Y[:, :, :, 0:3]
+        Yr = Y[:, :, :, 3:6]
+        Y = tf.concat([Yl, Yr], 0)
 
     # Connect vgg directly to the image transformation network.
     with tf.variable_scope('vgg'):
@@ -166,6 +173,8 @@ def main(args):
 
     # Get the gram matrices' tensors for the style loss features.
     input_img_grams = utils.get_grams(loss_style_layers)
+    print 'outputting shape'
+    print input_img_grams
 
     # Get the tensors for content loss features.
     content_layers = utils.get_layers(loss_content_layers)
@@ -246,11 +255,14 @@ def main(args):
                 current_step = sess.run(global_step)
                 batch = sess.run(batch_op)
 
+                # TODO: have batch setup to give L,R image. change the y input
+                # below to feed in this batch instead of doubled up batch
+
                 # Collect content targets
                 content_data = sess.run(content_layers,
-                                        feed_dict={Y: batch})
+                                        feed_dict={Yl: batch, Yr: batch})
 
-                feed_dict = {X: batch,
+                feed_dict = {Xl: batch, Xr: batch,
                              content_targets: content_data,
                              beta: beta_val}
                 if (current_step % num_steps_ckpt == 0):

@@ -11,7 +11,7 @@ import tensorflow as tf
 # convolution instead of upsampling past the desired dimensions? Test this.
 
 
-def create_net(X, upsample_method='deconv'):
+def create_net(X, upsample_method='deconv', stereo=False):
     """Creates the transformation network, given dimensions acquired from an
     input image. Does this according to J.C. Johnson's specifications
     after utilizing instance normalization (i.e. halving dimensions given
@@ -24,8 +24,18 @@ def create_net(X, upsample_method='deconv'):
         Whether to upsample via deconvolution, or the proposed fix of resizing
         + convolution. Description of 2nd method is available at:
             http://distill.pub/2016/deconv_checkerboard/
+    :param stereo
+        values: True, False
+        Whether or not to have stereo output (last dimension = r,g,b,r,g,b)
     """
     assert(upsample_method in ['deconv', 'resize'])
+
+    if stereo:
+        n_in = 6
+        n_out = 6
+    else:
+        n_in = 3
+        n_out = 3
 
     # Input
     # X = tf.placeholder(tf.float32, shape=shape, name="input")
@@ -35,7 +45,7 @@ def create_net(X, upsample_method='deconv'):
 
     # Initial convolutional layers
     with tf.variable_scope('initconv_0'):
-        h = relu(inst_norm(conv2d(h, 3, 16, 9, [1, 1, 1, 1])))
+        h = relu(inst_norm(conv2d(h, n_in, 16, 9, [1, 1, 1, 1])))
     with tf.variable_scope('initconv_1'):
         h = relu(inst_norm(conv2d(h, 16, 32, 3, [1, 2, 2, 1])))
     with tf.variable_scope('initconv_2'):
@@ -60,14 +70,14 @@ def create_net(X, upsample_method='deconv'):
         with tf.variable_scope('upsample_1'):
             h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
         with tf.variable_scope('upsample_2'):
-            h = scaled_tanh(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
+            h = scaled_tanh(inst_norm(deconv2d(h, 16, n_out, 9, [1, 1, 1, 1])))
     elif upsample_method is 'resize':
         with tf.variable_scope('upsample_0'):
             h = relu(inst_norm(upconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
         with tf.variable_scope('upsample_1'):
             h = relu(inst_norm(upconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
         with tf.variable_scope('upsample_2'):  # Not actually an upsample.
-            h = scaled_tanh(inst_norm(conv2d(h, 16, 3, 9, [1, 1, 1, 1])))
+            h = scaled_tanh(inst_norm(conv2d(h, 16, n_out, 9, [1, 1, 1, 1])))
 
     # Create a redundant layer with name 'output'
     h = tf.identity(h, name='output')
