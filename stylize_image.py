@@ -21,7 +21,9 @@ def setup_parser():
     parser = argparse.ArgumentParser(description="""Use a trained fast style
                                      transfer model to filter an input
                                      image, and save to an output image.""")
-    parser.add_argument('--input_img_path',
+    parser.add_argument('--input_img_path_left',
+                        help='Input content image that will be stylized.')
+    parser.add_argument('--input_img_path_right',
                         help='Input content image that will be stylized.')
     parser.add_argument('--output_img_path',
                         help='Desired output image path.',
@@ -48,21 +50,28 @@ if __name__ == '__main__':
     # Command-line argument parsing.
     parser = setup_parser()
     args = parser.parse_args()
-    input_img_path = args.input_img_path
+    input_img_path_left = args.input_img_path_left
+    input_img_path_right = args.input_img_path_right
     output_img_path = args.output_img_path
     model_path = args.model_path
     upsample_method = args.upsample_method
     content_target_resize = args.content_target_resize
 
     # Read + preprocess input image.
-    img = utils.imread(input_img_path)
-    img = utils.imresize(img, content_target_resize)
-    img_4d = img[np.newaxis, :]
+    img_l = utils.imread(input_img_path_left)
+    img_l = utils.imresize(img_l, content_target_resize)
+    img_4d_l = img_l[np.newaxis, :]
+    img_r = utils.imread(input_img_path_right)
+    img_r = utils.imresize(img_r, content_target_resize)
+    img_4d_r = img_r[np.newaxis, :]
+    print img_4d_l.shape
+    print img_4d_r.shape
+    # TODO: in future we input stereo images into this code.
 
     # Create the graph.
     with tf.variable_scope('img_t_net'):
-        Xl = tf.placeholder(tf.float32, shape=img_4d.shape, name='input')
-        Xr = tf.placeholder(tf.float32, shape=img_4d.shape, name='input')
+        Xl = tf.placeholder(tf.float32, shape=img_4d_l.shape, name='input')
+        Xr = tf.placeholder(tf.float32, shape=img_4d_r.shape, name='input')
         X = tf.concat([Xl, Xr], 3)
         Y = create_net(X, upsample_method, stereo=True)
 
@@ -74,7 +83,7 @@ if __name__ == '__main__':
         print 'Loading up model...'
         saver.restore(sess, model_path)
         print 'Evaluating...'
-        stereo_out = sess.run(Y, feed_dict={Xl: img_4d, Xr: img_4d})
+        stereo_out = sess.run(Y, feed_dict={Xl: img_4d_l, Xr: img_4d_r})
 
     # Postprocess + save the output image.
     print 'Saving stereo image.'
