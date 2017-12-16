@@ -50,7 +50,7 @@ def setup_parser():
                         default=4, type=int)
     parser.add_argument('--batch_stereo_size',
                         help='Batch stereo size for training.',
-                        default=4, type=int)
+                        default=2, type=int)
     # TODO: hack here from 2 to 4 since splitting batch across two eyes.
     parser.add_argument('--n_epochs',
                         help='Number of training epochs.',
@@ -67,7 +67,8 @@ def setup_parser():
     parser.add_argument('--preprocess_stereo_size',
                         help="""Same as preprocess_size but for stereo training
                         data.""",
-                        default=[218, 512], nargs=2, type=int)
+                        default=[256, 512], nargs=2, type=int)
+    #TODO: hack above to get power of 2...fix this?
     parser.add_argument('--run_name',
                         help="""Name of log directory within the Tensoboard
                         directory (./summaries). If not set, will use
@@ -198,7 +199,9 @@ def main(args):
     tf.reset_default_graph()
 
     # Load in image transformation network into default graph.
-    shape = [batch_size] + preprocess_size + [3]
+    # TODO: fix this.
+    # shape = [batch_size] + preprocess_size + [3]
+    shape = [batch_stereo_size] + preprocess_stereo_size + [3]
     with tf.variable_scope('img_t_net'):
         Xl = tf.placeholder(tf.float32, shape=shape, name='input_left')
         Xr = tf.placeholder(tf.float32, shape=shape, name='input_right')
@@ -354,12 +357,11 @@ def main(args):
         sess.run(init_op)
         vggnet.load_weights('libs/vgg16_weights.npz', sess)
 
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         if pretrain_path is None:
             # We first do pretraining.
             print 'Starting pretraining...'
-
-            coord = tf.train.Coordinator()
-            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
             try:
                 print coord.should_stop()
