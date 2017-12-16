@@ -79,6 +79,5 @@ def get_grams(layer_names):
         gram_matrix = tf.matmul(features_matrix, features_matrix,
                                 transpose_a=True)
         gram_matrix = gram_matrix / tf.cast(num_elements, tf.float32)
-        print gram_matrix.shape
         grams.append(gram_matrix)
     return grams

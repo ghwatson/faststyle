@@ -94,7 +94,8 @@ def _bytes_feature(value):
 
 
 def _convert_to_example(filename, image_buffer_l, image_buffer_r,
-                        image_buffer_d, height, width):
+                        image_buffer_d, image_buffer_occ,
+                        image_buffer_oof, height, width):
   """Build an Example proto for an example.
 
   Args:
@@ -121,7 +122,9 @@ def _convert_to_example(filename, image_buffer_l, image_buffer_r,
       'image/filename': _bytes_feature(tf.compat.as_bytes(os.path.basename(filename))),
       'image/encoded_l': _bytes_feature(tf.compat.as_bytes(image_buffer_l)),
       'image/encoded_r': _bytes_feature(tf.compat.as_bytes(image_buffer_r)),
-      'image/encoded_d': _bytes_feature(tf.compat.as_bytes(image_buffer_d))}))
+      'image/encoded_d': _bytes_feature(tf.compat.as_bytes(image_buffer_d)),
+      'image/encoded_occ': _bytes_feature(tf.compat.as_bytes(image_buffer_occ)),
+      'image/encoded_oof': _bytes_feature(tf.compat.as_bytes(image_buffer_oof))}))
   return example
 
 
@@ -232,7 +235,8 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
     shard_counter = 0
     files_in_shard = np.arange(shard_ranges[s], shard_ranges[s + 1], dtype=int)
     for i in files_in_shard:
-      filename_l, filename_r, filename_d = filenames[i]
+      filename_l, filename_r, filename_d, filename_occ, filename_oof = \
+              filenames[i]
       basename = os.path.splitext(filename_l)[0]
       # scene = scenes[i]
 
@@ -240,10 +244,14 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
       image_buffer_l, height, width = _process_image(filename_l, coder)
       image_buffer_r,_,_ = _process_image(filename_r, coder)
       image_buffer_d,_,_ = _process_image(filename_d, coder)
+      image_buffer_occ,_,_ = _process_image(filename_occ, coder)
+      image_buffer_oof,_,_ = _process_image(filename_oof, coder)
+      # TODO: add in occlusion and outofframe
 
       # TODO: here we will want to feed in left, right, disparity buffers.
       example = _convert_to_example(basename, image_buffer_l, image_buffer_r,
-                                    image_buffer_d, height, width)
+                                    image_buffer_d, image_buffer_occ,
+                                    image_buffer_oof, height, width)
       writer.write(example.SerializeToString())
       shard_counter += 1
       counter += 1
@@ -323,7 +331,16 @@ def _find_image_files(data_dir, scenes):
       filenames_r = tf.gfile.Glob(file_r_path)
       file_d_path = '%s/disparities/%s/*' % (data_dir, scene)
       filenames_d = tf.gfile.Glob(file_d_path)
-      filenames.extend(zip(filenames_l, filenames_r, filenames_d))
+      file_occ_path = '%s/occlusions/%s/*' % (data_dir, scene)
+      filenames_occ = tf.gfile.Glob(file_occ_path)
+      file_oof_path = '%s/outofframe/%s/*' % (data_dir, scene)
+      filenames_oof = tf.gfile.Glob(file_oof_path)
+      to_add = zip(filenames_l,
+                   filenames_r,
+                   filenames_d,
+                   filenames_occ,
+                   filenames_oof)
+      filenames.extend(to_add)
   # filenames = tf.gfile.Glob(data_dir + '/*')
 
   # Shuffle the ordering of all image files in order to guarantee
@@ -366,7 +383,6 @@ def main(unused_argv):
   # Run it!
   _process_dataset('train', FLAGS.train_directory,
                    FLAGS.train_shards)
-
 
 if __name__ == '__main__':
   tf.app.run()

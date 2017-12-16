@@ -7,6 +7,7 @@ Date: Feb 2017
 
 import tensorflow as tf
 import numpy as np
+from tensorflow.contrib.resampler import resampler
 
 
 def content_loss(content_layers, target_content_layers,
@@ -39,6 +40,30 @@ def content_loss(content_layers, target_content_layers,
     content_loss = tf.add_n(content_losses, name='content_loss')
     return content_loss
 
+def disparity_loss(left, right, target_warp,
+                   disparity_weight, target_mask):
+    """Defines the disparity loss across stereo images.
+
+    :param left:
+        Left eye's stylized image tensor.
+    :param right:
+        Right eye's stylized image tensor.
+    :param target_disparities:
+        Placeholder to the target disparity maps.
+    :param disparity_weight:
+        Hyperparameter by which to multiply the disparity loss.
+    """
+    _, h, w, _ = left.get_shape().as_list()
+    warped = resampler(right, target_warp[:, :, :, 0:2])
+    loss = tf.square(target_mask*warped-target_mask*left)
+    loss = 1./(h*w)*tf.reduce_sum(loss)
+    loss = disparity_weight*loss
+
+    # f1 = lambda: loss
+    # f2 = lambda: tf.constant(0.0)
+    # loss = tf.case([(tf.equal(disparity_weight, tf.constant(0.0)), f2)], default=f1)
+    return loss
+
 
 def style_loss(grams, target_grams, style_weights):
     """Defines the style loss function.
@@ -65,6 +90,13 @@ def style_loss(grams, target_grams, style_weights):
         style_losses.append(loss)
     style_loss = tf.add_n(style_losses, name='style_loss')
     return style_loss
+
+
+def pixel_loss(img, target):
+    loss = tf.reduce_sum(tf.squared_difference(img, target))
+    _, h, w, c = img.get_shape().as_list()
+    loss = loss / (h*w*c)
+    return loss
 
 
 def tv_loss(X):

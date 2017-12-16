@@ -10,8 +10,10 @@ Date: Jan 2017
 
 import tensorflow as tf
 
-# TODO: for disparity image, do the shift + scaling as defined in sintel_io.py
+# TODO: for disparity image, do the shift + scaling as defined in sintel_io.py.
+#       then convert it into the appropriate warp map.
 # TODO: match the interface of this with the tfrecords_writer_stereo.py
+
 
 def preprocessing(image, resize_shape):
     """Simply resizes the image.
@@ -21,6 +23,55 @@ def preprocessing(image, resize_shape):
     :param resize_shape:
         list of dimensions
     """
+    if resize_shape is None:
+        return image
+    else:
+        image = tf.image.resize_images(image, size=resize_shape, method=2)
+        return image
+
+
+# Global tensor used in preprocessing disparity, convention defined by Sintel.
+
+
+def preprocessing_disparity(image, resize_shape):
+    """Resizes + rescales the disparity along with the resizing.
+
+    :param image:
+        image tensor
+    :param resize_shape:
+        list of dimensions
+    """
+    rescale = tf.constant([4.0, 1./2**6, 1./2**14])
+    image = tf.reduce_sum(tf.to_float(image)*rescale, 2, keep_dims=True)
+    if resize_shape is not None:
+        # TODO: this is hacked in for the time being.
+        scale = resize_shape[0]*1./436 # ex: 0.5 = 218/436
+        image = tf.image.resize_images(image, size=resize_shape, method=2)
+        image = scale*image
+
+    # Transform into a warp
+    # TODO: creating duplicate ops here. Make more efficient if needed.
+    # perhaps just precompute.
+    # TODO: dont know dynamic size...precompute these offline?
+    image = tf.concat([image, tf.zeros(image.shape)],axis=2)
+    h, w, _ = image.get_shape().as_list()
+    X, Y = tf.meshgrid(range(w), range(h))
+    warp_y = tf.to_float(Y) - image[:, :, 1]
+    warp_x = tf.to_float(X) - image[:, :, 0]
+    warp = tf.stack([warp_x, warp_y, tf.zeros(warp_x.shape)], axis=2)
+
+    return warp
+
+
+def preprocessing_masks(image, resize_shape):
+    """Makes masks binary. Also resizes.
+
+    :param image:
+        image tensor
+    :param resize_shape:
+        list of dimensions
+    """
+    image = tf.to_float(image)/255.0
     if resize_shape is None:
         return image
     else:
@@ -44,17 +95,24 @@ def read_my_file_format(filename_queue, resize_shape=None):
             'image/encoded_l': tf.FixedLenFeature([], tf.string),
             'image/encoded_r': tf.FixedLenFeature([], tf.string),
             'image/encoded_d': tf.FixedLenFeature([], tf.string),
+            'image/encoded_occ': tf.FixedLenFeature([], tf.string),
+            'image/encoded_oof': tf.FixedLenFeature([], tf.string),
             'image/height': tf.FixedLenFeature([], tf.int64),
             'image/channels': tf.FixedLenFeature([], tf.int64),
             'image/width': tf.FixedLenFeature([], tf.int64)})
     example_l = tf.image.decode_jpeg(features['image/encoded_l'], 3)
     example_r = tf.image.decode_jpeg(features['image/encoded_r'], 3)
     example_d = tf.image.decode_jpeg(features['image/encoded_d'], 3)
+    example_occ = tf.image.decode_jpeg(features['image/encoded_d'], 3)
+    example_oof = tf.image.decode_jpeg(features['image/encoded_d'], 3)
     processed_example_l = preprocessing(example_l, resize_shape)
     processed_example_r = preprocessing(example_r, resize_shape)
-    processed_example_d = preprocessing(example_d, resize_shape)
+    processed_example_d = preprocessing_disparity(example_d, resize_shape)
+    processed_example_occ = preprocessing_masks(example_occ, resize_shape)
+    processed_example_oof = preprocessing_masks(example_oof, resize_shape)
     processed_example = [processed_example_l, processed_example_r,
-                         processed_example_d]
+                         processed_example_d, processed_example_occ,
+                         processed_example_oof]
     return processed_example
 
 
