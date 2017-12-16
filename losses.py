@@ -54,7 +54,8 @@ def disparity_loss(left, right, target_warp,
         Hyperparameter by which to multiply the disparity loss.
     """
     _, h, w, _ = left.get_shape().as_list()
-    warped = resampler(right, target_warp[:, :, :, 0:2])
+    warped = resampler(right, target_warp[:, :, :, 0:2], name='warped')
+    print warped.name
     loss = tf.square(target_mask*warped-target_mask*left)
     loss = 1./(h*w)*tf.reduce_sum(loss)
     loss = disparity_weight*loss

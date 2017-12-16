@@ -22,6 +22,8 @@ import losses
 
 # TODO: debugging
 from PIL import Image
+import cv2
+from tensorflow.contrib.resampler import resampler
 
 
 def setup_parser():
@@ -271,6 +273,9 @@ def main(args):
     disparity_loss = losses.disparity_loss(Yl, Yr, target_warps,
                                            disparity_weight,
                                            target_mask)
+    # TODO: debugging
+    prewarp = target_mask*resampler(Xr, target_warps[:, :, :, 0:2], name='warped')
+
 
     # pixel_loss_l = losses.pixel_loss(Yl, np.zeros(Yl.shape))
     # pixel_loss_r = losses.pixel_loss(Yr, np.zeros(Yr.shape))
@@ -446,8 +451,13 @@ def main(args):
         # Perform stereo training! --------------------------------
         # ---------------------------------------------------------
 
+        # TODO: debugging
+        warp_t = tf.get_default_graph().get_tensor_by_name('warped/Resampler:0')
+
         print 'starting stereo training'
         fetch = [merged_stereo, optimizer_stereo, loss_stereo]
+        fetch_debug = [merged_stereo, optimizer_stereo, loss_stereo,
+                       warp_t, Yl, Yr, prewarp, target_mask]
 
         try:
             while not coord.should_stop():
@@ -494,8 +504,22 @@ def main(args):
                     # Do some standard output.
                     print current_step, loss_out
                 else:
-                    _, loss_out = sess.run(fetch[1:],
+                    # _, loss_out = sess.run(fetch[1:],
+                                           # feed_dict=feed_dict)
+                    # TODO: debugging
+                    _, loss_out, warp_v, l_v, r_v, prewarp_v, m_v = sess.run(fetch_debug[1:],
                                            feed_dict=feed_dict)
+                    print warp_v.shape
+                    viz = np.concatenate([warp_v, l_v, r_v, batch_l, batch_r,
+                                          prewarp_v],
+                                    axis=1)
+                    utils.imwrite('./viz.png', viz[0])
+                    print m_v.shape
+                    print np.unique(m_v)
+                    utils.imwrite('./viz_mask.png', m_v[0])
+                    # img = Image.fromarray(viz[0].astype('uint8'))
+                    # img.show()
+                    raise tf.errors.OutOfRangeError
 
                 # Throw error if we reach number of steps to break after.
                 if current_step == num_steps_break_stereo:

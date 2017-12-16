@@ -82,6 +82,7 @@ def create_net(X, upsample_method='deconv', stereo=False):
     # Create a redundant layer with name 'output'
     h = tf.identity(h, name='output')
 
+
     return h
 
 

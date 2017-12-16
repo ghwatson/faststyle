@@ -45,7 +45,7 @@ def preprocessing_disparity(image, resize_shape):
     image = tf.reduce_sum(tf.to_float(image)*rescale, 2, keep_dims=True)
     if resize_shape is not None:
         # TODO: this is hacked in for the time being.
-        scale = resize_shape[0]*1./436 # ex: 0.5 = 218/436
+        scale = resize_shape[1]*1./512 # ex: 0.5 = 218/436
         image = tf.image.resize_images(image, size=resize_shape, method=2)
         image = scale*image
 
