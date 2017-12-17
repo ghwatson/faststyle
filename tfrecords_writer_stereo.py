@@ -154,6 +154,31 @@ class ImageCoder(object):
     assert image.shape[2] == 3
     return image
 
+class ImageCoderGs(object):
+  """Helper class that provides TensorFlow image coding utilities."""
+
+  def __init__(self):
+    # Create a single Session to run all image coding calls.
+    self._sess = tf.Session()
+
+    # Initializes function that converts PNG to JPEG data.
+    self._png_data = tf.placeholder(dtype=tf.string)
+    image = tf.image.decode_png(self._png_data, channels=1)
+    self._png_to_jpeg = tf.image.encode_jpeg(image, format='grayscale', quality=100)
+
+    # Initializes function that decodes greyscale JPEG data.
+    self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
+    self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=1)
+
+  def png_to_jpeg(self, image_data):
+    return self._sess.run(self._png_to_jpeg,
+                          feed_dict={self._png_data: image_data})
+
+  def decode_jpeg(self, image_data):
+    image = self._sess.run(self._decode_jpeg,
+                           feed_dict={self._decode_jpeg_data: image_data})
+    assert image.shape[2] == 1
+    return image
 
 def _is_png(filename):
   """Determine if a file contains a PNG format image.
@@ -198,8 +223,39 @@ def _process_image(filename, coder):
 
   return image_data, height, width
 
+def _process_image_gs(filename, coder):
+  """Process a single image file.
 
-def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
+  Args:
+    filename: string, path to an image file e.g., '/path/to/example.JPG'.
+    coder: instance of ImageCoder to provide TensorFlow image coding utils.
+  Returns:
+    image_buffer: string, JPEG encoding of RGB image.
+    height: integer, image height in pixels.
+    width: integer, image width in pixels.
+  """
+  # Read the image file.
+  with tf.gfile.FastGFile(filename, 'r') as f:
+    image_data = f.read()
+
+  # Convert any PNG to JPEG's for consistency.
+  if _is_png(filename):
+    print('Converting PNG to JPEG for %s' % filename)
+    image_data = coder.png_to_jpeg(image_data)
+
+  # Decode the RGB JPEG.
+  image = coder.decode_jpeg(image_data)
+
+  # Check that image converted to RGB
+  assert len(image.shape) == 3
+  height = image.shape[0]
+  width = image.shape[1]
+  assert image.shape[2] == 1
+
+  return image_data, height, width
+
+
+def _process_image_files_batch(coder, coder_gs, thread_index, ranges, name, filenames,
                                num_shards):
   """Processes and saves list of images as TFRecord in 1 thread.
 
@@ -240,13 +296,13 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
       basename = os.path.splitext(filename_l)[0]
       # scene = scenes[i]
 
-      # TODO: we will want to process multiple images here.
       image_buffer_l, height, width = _process_image(filename_l, coder)
       image_buffer_r,_,_ = _process_image(filename_r, coder)
       image_buffer_d,_,_ = _process_image(filename_d, coder)
-      image_buffer_occ,_,_ = _process_image(filename_occ, coder)
-      image_buffer_oof,_,_ = _process_image(filename_oof, coder)
-      # TODO: add in occlusion and outofframe
+      # TODO: pass in greyscale encoders here.
+      # 
+      image_buffer_occ,_,_ = _process_image_gs(filename_occ, coder_gs)
+      image_buffer_oof,_,_ = _process_image_gs(filename_oof, coder_gs)
 
       # TODO: here we will want to feed in left, right, disparity buffers.
       example = _convert_to_example(basename, image_buffer_l, image_buffer_r,
@@ -295,10 +351,11 @@ def _process_image_files(name, filenames, num_shards):
 
   # Create a generic TensorFlow-based utility for converting all image codings.
   coder = ImageCoder()
+  coder_gs = ImageCoderGs()
 
   threads = []
   for thread_index in range(len(ranges)):
-    args = (coder, thread_index, ranges, name, filenames, num_shards)
+    args = (coder, coder_gs, thread_index, ranges, name, filenames, num_shards)
     t = threading.Thread(target=_process_image_files_batch, args=args)
     t.start()
     threads.append(t)

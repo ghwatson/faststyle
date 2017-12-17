@@ -45,7 +45,7 @@ def preprocessing_disparity(image, resize_shape):
     image = tf.reduce_sum(tf.to_float(image)*rescale, 2, keep_dims=True)
     if resize_shape is not None:
         # TODO: this is hacked in for the time being.
-        scale = resize_shape[1]*1./512 # ex: 0.5 = 218/436
+        scale = resize_shape[1]*1./1024 # ex: 0.5 = 218/436
         image = tf.image.resize_images(image, size=resize_shape, method=2)
         image = scale*image
 
@@ -58,7 +58,7 @@ def preprocessing_disparity(image, resize_shape):
     X, Y = tf.meshgrid(range(w), range(h))
     warp_y = tf.to_float(Y) - image[:, :, 1]
     warp_x = tf.to_float(X) - image[:, :, 0]
-    warp = tf.stack([warp_x, warp_y, tf.zeros(warp_x.shape)], axis=2)
+    warp = tf.stack([warp_x, warp_y], axis=2)
 
     return warp
 
@@ -71,7 +71,7 @@ def preprocessing_masks(image, resize_shape):
     :param resize_shape:
         list of dimensions
     """
-    image = tf.to_float(image)/255.0
+    #image = tf.to_float(image)
     if resize_shape is None:
         return image
     else:
@@ -103,8 +103,8 @@ def read_my_file_format(filename_queue, resize_shape=None):
     example_l = tf.image.decode_jpeg(features['image/encoded_l'], 3)
     example_r = tf.image.decode_jpeg(features['image/encoded_r'], 3)
     example_d = tf.image.decode_jpeg(features['image/encoded_d'], 3)
-    example_occ = tf.image.decode_jpeg(features['image/encoded_d'], 3)
-    example_oof = tf.image.decode_jpeg(features['image/encoded_d'], 3)
+    example_occ = tf.image.decode_jpeg(features['image/encoded_occ'], 1)
+    example_oof = tf.image.decode_jpeg(features['image/encoded_oof'], 1)
     processed_example_l = preprocessing(example_l, resize_shape)
     processed_example_r = preprocessing(example_r, resize_shape)
     processed_example_d = preprocessing_disparity(example_d, resize_shape)
@@ -141,6 +141,6 @@ def batcher(filenames, batch_size, resize_shape=None, num_epochs=None,
     example = read_my_file_format(filename_queue, resize_shape)
     capacity = min_after_dequeue + 3 * batch_size
     example_batch = tf.train.shuffle_batch(
-        [example], batch_size=batch_size, capacity=capacity,
+        example, batch_size=batch_size, capacity=capacity,
         min_after_dequeue=min_after_dequeue)
     return example_batch

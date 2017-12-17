@@ -52,6 +52,10 @@ def imwrite(path, img):
     cv2.imwrite(path, img)
 
 
+def imwrite_greyscale(path, img):
+    cv2.imwrite(path, img)
+
+
 def get_layers(layer_names):
     """Get tensors from default graph by name.
 

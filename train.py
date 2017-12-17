@@ -69,7 +69,7 @@ def setup_parser():
     parser.add_argument('--preprocess_stereo_size',
                         help="""Same as preprocess_size but for stereo training
                         data.""",
-                        default=[256, 512], nargs=2, type=int)
+                        default=[436, 1024], nargs=2, type=int)
     #TODO: hack above to get power of 2...fix this?
     parser.add_argument('--run_name',
                         help="""Name of log directory within the Tensoboard
@@ -260,21 +260,22 @@ def main(args):
                                      style_weights)
 
     # Create disparity loss function
+    st_shape = [batch_stereo_size] + preprocess_stereo_size
     target_warps = tf.placeholder(tf.float32,
-                                  shape=Yl.get_shape(),
+                                  shape=st_shape + [2],
                                   name='disparity_input')
     target_occlusions = tf.placeholder(tf.float32,
-                                       shape=Yl.get_shape(),
+                                       shape=st_shape + [1],
                                        name='occlusion_input')
     target_outofframes = tf.placeholder(tf.float32,
-                                        shape=Yl.get_shape(),
+                                        shape=st_shape + [1],
                                         name='outofframes_input')
-    target_mask = (1.-target_occlusions)*(1.-target_outofframes)
+    target_mask = (1.-target_occlusions/255.0)*(1.-target_outofframes/255.0)
     disparity_loss = losses.disparity_loss(Yl, Yr, target_warps,
                                            disparity_weight,
                                            target_mask)
     # TODO: debugging
-    prewarp = target_mask*resampler(Xr, target_warps[:, :, :, 0:2], name='warped')
+    prewarp = target_mask*resampler(Xr, target_warps, name='warped')
 
 
     # pixel_loss_l = losses.pixel_loss(Yl, np.zeros(Yl.shape))
@@ -465,11 +466,12 @@ def main(args):
 
                 # TODO: move squeeze to tensors?
                 batch = sess.run(batch_stereo_op)
-                batch_l = batch[:, 0, :, :, :]
-                batch_r = batch[:, 1, :, :, :]
-                batch_d = batch[:, 2, :, :, :]
-                batch_occ = batch[:, 3, :, :, :]
-                batch_oof = batch[:, 4, :, :, :]
+                #batch_l = batch[:, 0, :, :, :]
+                #batch_r = batch[:, 1, :, :, :]
+                #batch_d = batch[:, 2, :, :, :]
+                #batch_occ = batch[:, 3, :, :, :]
+                #batch_oof = batch[:, 4, :, :, :]
+                batch_l, batch_r, batch_d, batch_occ, batch_oof = batch
 
                 # Collect content targets
                 content_data = sess.run(content_layers,
@@ -486,6 +488,23 @@ def main(args):
                              target_warps: batch_d,
                              target_occlusions: batch_occ,
                              target_outofframes: batch_oof}
+
+                # TODO: debugging
+                loss_out, warp_v, l_v, r_v, prewarp_v, m_v = sess.run(fetch_debug[2:],
+                                       feed_dict=feed_dict)
+                print warp_v.shape
+                viz = np.concatenate([warp_v, l_v, r_v, batch_l, batch_r,
+                                      prewarp_v],
+                                axis=1)
+                utils.imwrite('./viz.png', viz[0])
+                print m_v.shape
+                print batch_occ.shape
+                print np.unique(batch_occ[0])
+                utils.imwrite_greyscale('./viz_mask.png',batch_occ[0])
+                # img = Image.fromarray(viz[0].astype('uint8'))
+                # img.show()
+                raise tf.errors.OutOfRangeError
+
                 if (current_step % num_steps_ckpt == 0):
                     # Save a checkpoint
                     save_path = 'training/' + model_name + '_poststereo.ckpt'
