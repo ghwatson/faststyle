@@ -22,7 +22,7 @@ def imread(path):
     return img
 
 
-def imresize(img, scale):
+def imresize(img, scale, method=None):
     """Depending on if we scale the image up or down, we use an interpolation
     technique as per OpenCV recommendation.
 
@@ -31,12 +31,20 @@ def imresize(img, scale):
     :param scale:
         float to scale image by in both axes.
     """
-    if scale > 1.0:  # use cubic interpolation for upscale.
-        img = cv2.resize(img, None, interpolation=cv2.INTER_CUBIC,
-                         fx=scale, fy=scale)
-    elif scale < 1.0:  # area relation sampling for downscale.
-        img = cv2.resize(img, None, interpolation=cv2.INTER_AREA,
-                         fx=scale, fy=scale)
+    if method is None:
+        if scale > 1.0:  # use cubic interpolation for upscale.
+            img = cv2.resize(img, None, interpolation=cv2.INTER_CUBIC,
+                             fx=scale, fy=scale)
+        elif scale < 1.0:  # area relation sampling for downscale.
+            img = cv2.resize(img, None, interpolation=cv2.INTER_AREA,
+                             fx=scale, fy=scale)
+    else:
+        if scale > 1.0:  # use cubic interpolation for upscale.
+            img = cv2.resize(img, None, interpolation=method,
+                             fx=scale, fy=scale)
+        elif scale < 1.0:  # area relation sampling for downscale.
+            img = cv2.resize(img, None, interpolation=method,
+                             fx=scale, fy=scale)
     return img
 
 

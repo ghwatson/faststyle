@@ -10,6 +10,7 @@ Date: Jan 2017
 
 import tensorflow as tf
 
+
 # TODO: for disparity image, do the shift + scaling as defined in sintel_io.py.
 #       then convert it into the appropriate warp map.
 # TODO: match the interface of this with the tfrecords_writer_stereo.py
@@ -26,7 +27,7 @@ def preprocessing(image, resize_shape):
     if resize_shape is None:
         return image
     else:
-        image = tf.image.resize_images(image, size=resize_shape, method=2)
+        image = tf.image.resize_images(image, size=resize_shape, method=0)
         return image
 
 
@@ -41,12 +42,13 @@ def preprocessing_disparity(image, resize_shape):
     :param resize_shape:
         list of dimensions
     """
+    orig_shape = [436,1024]
     rescale = tf.constant([4.0, 1./2**6, 1./2**14])
     image = tf.reduce_sum(tf.to_float(image)*rescale, 2, keep_dims=True)
     if resize_shape is not None:
         # TODO: this is hacked in for the time being.
         scale = resize_shape[1]*1./1024 # ex: 0.5 = 218/436
-        image = tf.image.resize_images(image, size=resize_shape, method=2)
+        image = tf.image.resize_images(image, size=resize_shape, method=0)
         image = scale*image
 
     # Transform into a warp
@@ -75,7 +77,7 @@ def preprocessing_masks(image, resize_shape):
     if resize_shape is None:
         return image
     else:
-        image = tf.image.resize_images(image, size=resize_shape, method=2)
+        image = tf.image.resize_images(image, size=resize_shape, method=1)
         return image
 
 
@@ -100,11 +102,11 @@ def read_my_file_format(filename_queue, resize_shape=None):
             'image/height': tf.FixedLenFeature([], tf.int64),
             'image/channels': tf.FixedLenFeature([], tf.int64),
             'image/width': tf.FixedLenFeature([], tf.int64)})
-    example_l = tf.image.decode_jpeg(features['image/encoded_l'], 3)
-    example_r = tf.image.decode_jpeg(features['image/encoded_r'], 3)
-    example_d = tf.image.decode_jpeg(features['image/encoded_d'], 3)
-    example_occ = tf.image.decode_jpeg(features['image/encoded_occ'], 1)
-    example_oof = tf.image.decode_jpeg(features['image/encoded_oof'], 1)
+    example_l = tf.image.decode_png(features['image/encoded_l'], 3)
+    example_r = tf.image.decode_png(features['image/encoded_r'], 3)
+    example_d = tf.image.decode_png(features['image/encoded_d'], 3)
+    example_occ = tf.image.decode_png(features['image/encoded_occ'], 1)
+    example_oof = tf.image.decode_png(features['image/encoded_oof'], 1)
     processed_example_l = preprocessing(example_l, resize_shape)
     processed_example_r = preprocessing(example_r, resize_shape)
     processed_example_d = preprocessing_disparity(example_d, resize_shape)

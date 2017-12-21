@@ -137,22 +137,28 @@ class ImageCoder(object):
 
     # Initializes function that converts PNG to JPEG data.
     self._png_data = tf.placeholder(dtype=tf.string)
-    image = tf.image.decode_png(self._png_data, channels=3)
-    self._png_to_jpeg = tf.image.encode_jpeg(image, format='rgb', quality=100)
+    self._decode_png = tf.image.decode_png(self._png_data, channels=3)
+    # self._png_to_jpeg = tf.image.encode_jpeg(image, format='rgb', quality=100)
 
     # Initializes function that decodes RGB JPEG data.
-    self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
-    self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=3)
+    # self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
+    # self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=3)
 
-  def png_to_jpeg(self, image_data):
-    return self._sess.run(self._png_to_jpeg,
-                          feed_dict={self._png_data: image_data})
+  # def png_to_jpeg(self, image_data):
+    # return self._sess.run(self._png_to_jpeg,
+                          # feed_dict={self._png_data: image_data})
 
-  def decode_jpeg(self, image_data):
-    image = self._sess.run(self._decode_jpeg,
-                           feed_dict={self._decode_jpeg_data: image_data})
+  def decode_png(self, image_data):
+    image = self._sess.run(self._decode_png,
+                           feed_dict={self._png_data: image_data})
     assert image.shape[2] == 3
     return image
+  # def decode_jpeg(self, image_data):
+    # image = self._sess.run(self._decode_jpeg,
+                           # feed_dict={self._decode_jpeg_data: image_data})
+
+    # assert image.shape[2] == 3
+    # return image
 
 class ImageCoderGs(object):
   """Helper class that provides TensorFlow image coding utilities."""
@@ -163,22 +169,30 @@ class ImageCoderGs(object):
 
     # Initializes function that converts PNG to JPEG data.
     self._png_data = tf.placeholder(dtype=tf.string)
-    image = tf.image.decode_png(self._png_data, channels=1)
-    self._png_to_jpeg = tf.image.encode_jpeg(image, format='grayscale', quality=100)
+    self._decode_png = tf.image.decode_png(self._png_data, channels=1)
+    # self._png_to_jpeg = tf.image.encode_jpeg(image, format='grayscale', quality=100)
+
 
     # Initializes function that decodes greyscale JPEG data.
-    self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
-    self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=1)
+    # self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
+    # self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=1)
 
-  def png_to_jpeg(self, image_data):
-    return self._sess.run(self._png_to_jpeg,
+  # def png_to_jpeg(self, image_data):
+    # # returns output of _png_to_jpeg given image data.
+    # return self._sess.run(self._png_to_jpeg,
+                          # feed_dict={self._png_data: image_data})
+  
+  def decode_png(self, image_data):
+    image = self._sess.run(self._decode_png,
                           feed_dict={self._png_data: image_data})
-
-  def decode_jpeg(self, image_data):
-    image = self._sess.run(self._decode_jpeg,
-                           feed_dict={self._decode_jpeg_data: image_data})
     assert image.shape[2] == 1
     return image
+
+  # def decode_jpeg(self, image_data):
+    # image = self._sess.run(self._decode_jpeg,
+                           # feed_dict={self._decode_jpeg_data: image_data})
+    # assert image.shape[2] == 1
+    # return image
 
 def _is_png(filename):
   """Determine if a file contains a PNG format image.
@@ -208,12 +222,14 @@ def _process_image(filename, coder):
     image_data = f.read()
 
   # Convert any PNG to JPEG's for consistency.
-  if _is_png(filename):
-    print('Converting PNG to JPEG for %s' % filename)
-    image_data = coder.png_to_jpeg(image_data)
+  # if _is_png(filename):
+    # print('Converting PNG to JPEG for %s' % filename)
+    # image_data = coder.png_to_jpeg(image_data)
+
 
   # Decode the RGB JPEG.
-  image = coder.decode_jpeg(image_data)
+  # image = coder.decode_jpeg(image_data)
+  image = coder.decode_png(image_data)
 
   # Check that image converted to RGB
   assert len(image.shape) == 3
@@ -239,14 +255,15 @@ def _process_image_gs(filename, coder):
     image_data = f.read()
 
   # Convert any PNG to JPEG's for consistency.
-  if _is_png(filename):
-    print('Converting PNG to JPEG for %s' % filename)
-    image_data = coder.png_to_jpeg(image_data)
+  # if _is_png(filename):
+    # print('Converting PNG to JPEG for %s' % filename)
+    # image_data = coder.png_to_jpeg(image_data)
 
-  # Decode the RGB JPEG.
-  image = coder.decode_jpeg(image_data)
+  # Decode the GS PNG.
+  # image = coder.decode_jpeg(image_data)
+  image = coder.decode_png(image_data)
 
-  # Check that image converted to RGB
+  # Check that image converted to GS
   assert len(image.shape) == 3
   height = image.shape[0]
   width = image.shape[1]
@@ -382,9 +399,9 @@ def _find_image_files(data_dir, scenes):
   # List of JPEG files.
   filenames = []
   for scene in scenes:
-      file_l_path = '%s/final_left/%s/*' % (data_dir, scene)
+      file_l_path = '%s/clean_left/%s/*' % (data_dir, scene)
       filenames_l = tf.gfile.Glob(file_l_path)
-      file_r_path = '%s/final_right/%s/*' % (data_dir, scene)
+      file_r_path = '%s/clean_right/%s/*' % (data_dir, scene)
       filenames_r = tf.gfile.Glob(file_r_path)
       file_d_path = '%s/disparities/%s/*' % (data_dir, scene)
       filenames_d = tf.gfile.Glob(file_d_path)
@@ -425,7 +442,7 @@ def _process_dataset(name, directory, num_shards):
     num_shards: integer number of shards for this data set.
   """
   # Get the scene directory names.
-  scenes = os.listdir(directory + '/final_left/')
+  scenes = os.listdir(directory + '/clean_left/')
 
 
   filenames = _find_image_files(directory, scenes)

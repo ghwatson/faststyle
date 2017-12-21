@@ -47,6 +47,9 @@ def setup_parser():
     parser.add_argument('--learn_rate',
                         help='Learning rate for Adam optimizer.',
                         default=1e-3, type=float)
+    parser.add_argument('--learn_stereo_rate',
+                        help='Learning rate for Adam optimizer.',
+                        default=1e-3, type=float)
     parser.add_argument('--batch_size',
                         help='Batch size for training.',
                         default=4, type=int)
@@ -60,7 +63,7 @@ def setup_parser():
                         # default=2, type=int)
     parser.add_argument('--n_epochs_stereo',
                         help='Number of training epochs for stereo data.',
-                        default=10, type=int)
+                        default=60, type=int)
                         # default=2, type=int)
     parser.add_argument('--preprocess_size',
                         help="""Dimensions to resize training images to before passing
@@ -69,7 +72,7 @@ def setup_parser():
     parser.add_argument('--preprocess_stereo_size',
                         help="""Same as preprocess_size but for stereo training
                         data.""",
-                        default=[436, 1024], nargs=2, type=int)
+                        default=[256, 512], nargs=2, type=int)
     #TODO: hack above to get power of 2...fix this?
     parser.add_argument('--run_name',
                         help="""Name of log directory within the Tensoboard
@@ -164,6 +167,7 @@ def main(args):
     n_epochs_stereo = args.n_epochs_stereo
     run_name = args.run_name
     learn_rate = args.learn_rate
+    learn_stereo_rate = args.learn_stereo_rate
     loss_content_layers = args.loss_content_layers
     loss_style_layers = args.loss_style_layers
     content_weights = args.content_weights
@@ -275,7 +279,7 @@ def main(args):
                                            disparity_weight,
                                            target_mask)
     # TODO: debugging
-    prewarp = target_mask*resampler(Xr, target_warps, name='warped')
+    # prewarp = target_mask*resampler(Xr, target_warps, name='warped2')
 
 
     # pixel_loss_l = losses.pixel_loss(Yl, np.zeros(Yl.shape))
@@ -292,13 +296,14 @@ def main(args):
     summs = []
     with tf.name_scope('summaries'):
         # TODO: neaten this up.
-        summ = tf.summary.scalar('loss', loss)
+        summ = tf.summary.scalar('original loss', loss)
         summs.append(summ)
         summ = tf.summary.scalar('style_loss', style_loss_l+style_loss_r)
         summs.append(summ)
         summ = tf.summary.scalar('content_loss', cont_loss_l+cont_loss_r)
         summs.append(summ)
         summ_disp = tf.summary.scalar('disparity_loss', disparity_loss)
+        summ_disp2 = tf.summary.scalar('total loss', loss_stereo)
         # tf.summary.scalar('tv_loss', beta*tv_loss)
 
     # Setup input pipeline (delegate it to CPU to let GPU handle neural net)
@@ -321,7 +326,7 @@ def main(args):
     global_step = tf.Variable(0, name='global_step', trainable=False)
     optimizer = tf.train.AdamOptimizer(learn_rate).minimize(loss, global_step,
                                                             train_vars)
-    optimizer_stereo = tf.train.AdamOptimizer(learn_rate).minimize(loss_stereo, global_step,
+    optimizer_stereo = tf.train.AdamOptimizer(learn_stereo_rate).minimize(loss_stereo, global_step,
                                                             train_vars)
 
     # Setup subdirectory for this run's Tensoboard logs.
@@ -346,7 +351,7 @@ def main(args):
     final_saver = tf.train.Saver(train_vars)
     merged = tf.summary.merge_all()
     merged = tf.summary.merge(summs)
-    merged_stereo = tf.summary.merge(summs + [summ_disp])
+    merged_stereo = tf.summary.merge(summs + [summ_disp, summ_disp2])
     full_log_path = './summaries/train/' + run_name
     train_writer = tf.summary.FileWriter(full_log_path)
 
@@ -453,12 +458,13 @@ def main(args):
         # ---------------------------------------------------------
 
         # TODO: debugging
-        warp_t = tf.get_default_graph().get_tensor_by_name('warped/Resampler:0')
+        # warp_t = tf.get_default_graph().get_tensor_by_name('warped/Resampler:0')
 
         print 'starting stereo training'
         fetch = [merged_stereo, optimizer_stereo, loss_stereo]
-        fetch_debug = [merged_stereo, optimizer_stereo, loss_stereo,
-                       warp_t, Yl, Yr, prewarp, target_mask]
+        # TODO: debugging
+        # fetch_debug = [merged_stereo, optimizer_stereo, loss_stereo,
+                       # warp_t, Yl, Yr, prewarp, target_mask]
 
         try:
             while not coord.should_stop():
@@ -466,11 +472,6 @@ def main(args):
 
                 # TODO: move squeeze to tensors?
                 batch = sess.run(batch_stereo_op)
-                #batch_l = batch[:, 0, :, :, :]
-                #batch_r = batch[:, 1, :, :, :]
-                #batch_d = batch[:, 2, :, :, :]
-                #batch_occ = batch[:, 3, :, :, :]
-                #batch_oof = batch[:, 4, :, :, :]
                 batch_l, batch_r, batch_d, batch_occ, batch_oof = batch
 
                 # Collect content targets
@@ -490,20 +491,20 @@ def main(args):
                              target_outofframes: batch_oof}
 
                 # TODO: debugging
-                loss_out, warp_v, l_v, r_v, prewarp_v, m_v = sess.run(fetch_debug[2:],
-                                       feed_dict=feed_dict)
-                print warp_v.shape
-                viz = np.concatenate([warp_v, l_v, r_v, batch_l, batch_r,
-                                      prewarp_v],
-                                axis=1)
-                utils.imwrite('./viz.png', viz[0])
-                print m_v.shape
-                print batch_occ.shape
-                print np.unique(batch_occ[0])
-                utils.imwrite_greyscale('./viz_mask.png',batch_occ[0])
-                # img = Image.fromarray(viz[0].astype('uint8'))
-                # img.show()
-                raise tf.errors.OutOfRangeError
+                # loss_out, warp_v, l_v, r_v, prewarp_v, m_v = sess.run(fetch_debug[2:],
+                                       # feed_dict=feed_dict)
+                # print warp_v.shape
+                # viz = np.concatenate([warp_v, l_v, r_v, batch_l, batch_r,
+                                      # prewarp_v],
+                                # axis=1)
+                # utils.imwrite('./viz.png', viz[0])
+                # print m_v.shape
+                # print batch_occ.shape
+                # print np.unique(batch_occ[0])
+                # utils.imwrite_greyscale('./viz_mask.png',batch_occ[0])
+                # # img = Image.fromarray(viz[0].astype('uint8'))
+                # # img.show()
+                # raise tf.errors.OutOfRangeError
 
                 if (current_step % num_steps_ckpt == 0):
                     # Save a checkpoint
@@ -523,22 +524,22 @@ def main(args):
                     # Do some standard output.
                     print current_step, loss_out
                 else:
-                    # _, loss_out = sess.run(fetch[1:],
-                                           # feed_dict=feed_dict)
-                    # TODO: debugging
-                    _, loss_out, warp_v, l_v, r_v, prewarp_v, m_v = sess.run(fetch_debug[1:],
+                    _, loss_out = sess.run(fetch[1:],
                                            feed_dict=feed_dict)
-                    print warp_v.shape
-                    viz = np.concatenate([warp_v, l_v, r_v, batch_l, batch_r,
-                                          prewarp_v],
-                                    axis=1)
-                    utils.imwrite('./viz.png', viz[0])
-                    print m_v.shape
-                    print np.unique(m_v)
-                    utils.imwrite('./viz_mask.png', m_v[0])
-                    # img = Image.fromarray(viz[0].astype('uint8'))
-                    # img.show()
-                    raise tf.errors.OutOfRangeError
+                    # TODO: debugging
+                    # _, loss_out, warp_v, l_v, r_v, prewarp_v, m_v = sess.run(fetch_debug[1:],
+                                           # feed_dict=feed_dict)
+                    # print warp_v.shape
+                    # viz = np.concatenate([warp_v, l_v, r_v, batch_l, batch_r,
+                                          # prewarp_v],
+                                    # axis=1)
+                    # utils.imwrite('./viz.png', viz[0])
+                    # print m_v.shape
+                    # print np.unique(m_v)
+                    # utils.imwrite('./viz_mask.png', m_v[0])
+                    # # img = Image.fromarray(viz[0].astype('uint8'))
+                    # # img.show()
+                    # raise tf.errors.OutOfRangeError
 
                 # Throw error if we reach number of steps to break after.
                 if current_step == num_steps_break_stereo:
