@@ -10,11 +10,39 @@ Date: Jan 2017
 
 import tensorflow as tf
 
+# TODO: better modularize all this.
+from tensorflow.python.ops import array_ops
+from tensorflow.python.ops import check_ops
+from tensorflow.python.ops import control_flow_ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.ops import random_ops
+from tensorflow.python.framework import ops
+from tensorflow.python.framework import tensor_shape
+# from testrandpipe import data_augment
 
 # TODO: for disparity image, do the shift + scaling as defined in sintel_io.py.
 #       then convert it into the appropriate warp map.
 # TODO: match the interface of this with the tfrecords_writer_stereo.py
 
+
+def data_augment(example):
+    """Performs flipping (with eye's swapped if vertical flip).
+
+    :param example:
+    processed_example = [processed_example_l, processed_example_r,
+                         processed_example_d, processed_example_occ,
+                         processed_example_oof]
+    """
+    ex_tensor = tf.stack(example, axis=2)
+    flipped = tf.image.random_flip_up_down(ex_tensor)
+    example = tf.unstack(flipped, axis=2)
+
+    # # Also do a random left-right flip.
+    # seed = None
+    # uniform_random = random_ops.random_uniform([], 0, 1.0, seed=seed)
+    # mirror_cond = math_ops.less(uniform_random, .5)
+
+    return example
 
 def preprocessing(image, resize_shape):
     """Simply resizes the image.
@@ -55,7 +83,7 @@ def preprocessing_disparity(image, resize_shape):
     # TODO: creating duplicate ops here. Make more efficient if needed.
     # perhaps just precompute.
     # TODO: dont know dynamic size...precompute these offline?
-    image = tf.concat([image, tf.zeros(image.shape)],axis=2)
+    image = tf.concat([image, tf.zeros(image.shape)], axis=2)
     h, w, _ = image.get_shape().as_list()
     X, Y = tf.meshgrid(range(w), range(h))
     warp_y = tf.to_float(Y) - image[:, :, 1]
@@ -115,6 +143,9 @@ def read_my_file_format(filename_queue, resize_shape=None):
     processed_example = [processed_example_l, processed_example_r,
                          processed_example_d, processed_example_occ,
                          processed_example_oof]
+
+    processed_example = data_augment(processed_example)
+
     return processed_example
 
 

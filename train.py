@@ -274,10 +274,12 @@ def main(args):
     target_outofframes = tf.placeholder(tf.float32,
                                         shape=st_shape + [1],
                                         name='outofframes_input')
+    # TODO: put this back.
     target_mask = (1.-target_occlusions/255.0)*(1.-target_outofframes/255.0)
     disparity_loss = losses.disparity_loss(Yl, Yr, target_warps,
                                            disparity_weight,
                                            target_mask)
+    # disparity_loss = 0.0
     # TODO: debugging
     # prewarp = target_mask*resampler(Xr, target_warps, name='warped2')
 
@@ -459,6 +461,8 @@ def main(args):
 
         # TODO: debugging
         # warp_t = tf.get_default_graph().get_tensor_by_name('warped/Resampler:0')
+        # raise ValueError('yo')
+
 
         print 'starting stereo training'
         fetch = [merged_stereo, optimizer_stereo, loss_stereo]
