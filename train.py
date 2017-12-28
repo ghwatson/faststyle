@@ -55,7 +55,7 @@ def setup_parser():
                         default=4, type=int)
     parser.add_argument('--batch_stereo_size',
                         help='Batch stereo size for training.',
-                        default=2, type=int)
+                        default=3, type=int)
     # TODO: hack here from 2 to 4 since splitting batch across two eyes.
     parser.add_argument('--n_epochs',
                         help='Number of training epochs.',
@@ -72,7 +72,7 @@ def setup_parser():
     parser.add_argument('--preprocess_stereo_size',
                         help="""Same as preprocess_size but for stereo training
                         data.""",
-                        default=[256, 512], nargs=2, type=int)
+                        default=[220, 512], nargs=2, type=int)
     #TODO: hack above to get power of 2...fix this?
     parser.add_argument('--run_name',
                         help="""Name of log directory within the Tensoboard
@@ -101,7 +101,7 @@ def setup_parser():
     # TODO: search over this hyperparameter. Johnson with temporal loss?
     parser.add_argument('--disparity_weight',
                         help="""disparity loss weight.""",
-                        default=1.0,
+                        default=1000.0,
                         type=float)
     parser.add_argument('--num_steps_ckpt',
                         help="""Save a checkpoint everytime this number of
@@ -114,6 +114,12 @@ def setup_parser():
                         The larger, the better the shuffling, but the more RAM
                         filled, and a slower startup.""",
                         default=4000,
+                        type=int)
+    parser.add_argument('--num_pipe_buffer_stereo',
+                        help="""Number of images loaded into RAM in pipeline.
+                        The larger, the better the shuffling, but the more RAM
+                        filled, and a slower startup.""",
+                        default=400,
                         type=int)
     parser.add_argument('--num_steps_break',
                         help="""Max on number of steps. Training ends when
@@ -175,6 +181,7 @@ def main(args):
     disparity_weight = args.disparity_weight
     num_steps_ckpt = args.num_steps_ckpt
     num_pipe_buffer = args.num_pipe_buffer
+    num_pipe_buffer_stereo = args.num_pipe_buffer_stereo
     num_steps_break = args.num_steps_break
     num_steps_break_stereo = args.num_steps_break_stereo
     beta_val = args.beta
@@ -318,7 +325,7 @@ def main(args):
                                                   batch_stereo_size,
                                                   preprocess_stereo_size,
                                                   n_epochs_stereo,
-                                                  num_pipe_buffer)
+                                                  num_pipe_buffer_stereo)
 
     # We do not want to train VGG, so we must grab the subset.
     train_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES,
