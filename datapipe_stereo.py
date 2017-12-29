@@ -33,9 +33,9 @@ def data_augment(example):
                          processed_example_d, processed_example_occ,
                          processed_example_oof]
     """
-    ex_tensor = tf.stack(example, axis=2)
+    ex_tensor = tf.concat(example, axis=2)
     flipped = tf.image.random_flip_up_down(ex_tensor)
-    example = tf.unstack(flipped, axis=2)
+    example = tf.split(flipped, [3, 3, 2, 1, 1], axis=2)
 
     # # Also do a random left-right flip.
     # seed = None
@@ -103,10 +103,10 @@ def preprocessing_masks(image, resize_shape):
     """
     #image = tf.to_float(image)
     if resize_shape is None:
-        return image
+        return tf.to_float(image)
     else:
         image = tf.image.resize_images(image, size=resize_shape, method=1)
-        return image
+        return tf.to_float(image)
 
 
 def read_my_file_format(filename_queue, resize_shape=None):

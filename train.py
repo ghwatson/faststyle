@@ -119,7 +119,7 @@ def setup_parser():
                         help="""Number of images loaded into RAM in pipeline.
                         The larger, the better the shuffling, but the more RAM
                         filled, and a slower startup.""",
-                        default=400,
+                        default=300,
                         type=int)
     parser.add_argument('--num_steps_break',
                         help="""Max on number of steps. Training ends when
