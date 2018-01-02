@@ -35,7 +35,7 @@ def data_augment(example):
     """
     ex_tensor = tf.concat(example, axis=2)
     flipped = tf.image.random_flip_up_down(ex_tensor)
-    example = tf.split(flipped, [3, 3, 2, 1, 1], axis=2)
+    example = tf.split(flipped, [3, 3, 3, 1, 1], axis=2)
 
     # # Also do a random left-right flip.
     # seed = None
@@ -135,6 +135,9 @@ def read_my_file_format(filename_queue, resize_shape=None):
     example_d = tf.image.decode_png(features['image/encoded_d'], 3)
     example_occ = tf.image.decode_png(features['image/encoded_occ'], 1)
     example_oof = tf.image.decode_png(features['image/encoded_oof'], 1)
+    example = [example_l, example_r, example_d, example_occ, example_oof]
+    example = data_augment(example)
+    [example_l, example_r, example_d, example_occ, example_oof] = example
     processed_example_l = preprocessing(example_l, resize_shape)
     processed_example_r = preprocessing(example_r, resize_shape)
     processed_example_d = preprocessing_disparity(example_d, resize_shape)
@@ -144,7 +147,7 @@ def read_my_file_format(filename_queue, resize_shape=None):
                          processed_example_d, processed_example_occ,
                          processed_example_oof]
 
-    processed_example = data_augment(processed_example)
+    # processed_example = data_augment(processed_example)
 
     return processed_example
 
