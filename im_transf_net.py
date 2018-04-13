@@ -54,14 +54,14 @@ def create_net(X, upsample_method='deconv'):
         h = res_layer(h, 64, 3, [1, 1, 1, 1])
 
     # Upsampling layers (tanh on last to get 0,255 range)
-    if upsample_method is 'deconv':
+    if upsample_method == 'deconv':
         with tf.variable_scope('upsample_0'):
             h = relu(inst_norm(deconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
         with tf.variable_scope('upsample_1'):
             h = relu(inst_norm(deconv2d(h, 32, 16, 3, [1, 2, 2, 1])))
         with tf.variable_scope('upsample_2'):
             h = scaled_tanh(inst_norm(deconv2d(h, 16, 3, 9, [1, 1, 1, 1])))
-    elif upsample_method is 'resize':
+    elif upsample_method == 'resize':
         with tf.variable_scope('upsample_0'):
             h = relu(inst_norm(upconv2d(h, 64, 32, 3, [1, 2, 2, 1])))
         with tf.variable_scope('upsample_1'):
